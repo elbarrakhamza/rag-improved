@@ -3,8 +3,6 @@ from fastapi.security import APIKeyHeader
 from app.core.config import settings
 from typing import Optional, Dict, Any
 import hashlib
-import asyncpg
-import json
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
@@ -53,14 +51,13 @@ async def get_api_key_info(api_key: str, request: Optional[Request] = None) -> D
                 _api_key_cache[api_key] = result
                 return result
     
-    # Si la clé n'existe pas, retourner un rôle public par défaut
-    # (pour les clients externes qui ont une clé valide)
     return {"role": "public", "user_id": None, "key_hash": key_hash}
 
 
+# CORRECTION ICI : remplacer Optional[Request] par Request avec None par défaut
 async def get_api_key(
     api_key: str = Security(api_key_header),
-    request: Optional[Request] = None
+    request: Request = None
 ) -> Dict[str, Any]:
     """
     Vérifie et retourne les informations de la clé API
@@ -75,7 +72,6 @@ async def get_api_key(
     
     # Vérifier que la clé est valide (admin ou en base de données)
     if api_key != settings.admin_api_key and key_info.get("role") == "public":
-        # Vérifier si c'est une clé publique valide (en base)
         if request and hasattr(request.app, "state") and hasattr(request.app.state, "pool"):
             pool = request.app.state.pool
             async with pool.acquire() as conn:
@@ -92,9 +88,10 @@ async def get_api_key(
     return key_info
 
 
+# CORRECTION ICI aussi
 async def get_admin_api_key(
     api_key: str = Security(api_key_header),
-    request: Optional[Request] = None
+    request: Request = None
 ) -> Dict[str, Any]:
     """
     Vérifie que la clé API a des droits admin
