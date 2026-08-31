@@ -1,5 +1,19 @@
 // API Configuration
-const API_BASE = 'http://localhost:8000';
+// Détection automatique de l'environnement
+const getApiBase = () => {
+    // En production (domaine stage.enset.top)
+    if (window.location.hostname.includes('stage.enset.top')) {
+        return 'https://api-rag.stage.enset.top';
+    }
+    // En développement local
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        return 'http://localhost:8000';
+    }
+    // Fallback
+    return 'https://api-rag.stage.enset.top';
+};
+
+const API_BASE = getApiBase();
 
 // Store API key (from localStorage)
 let apiKey = localStorage.getItem('apiKey') || '';
@@ -26,17 +40,24 @@ const api = {
             headers['X-API-Key'] = apiKey;
         }
         
-        const response = await fetch(url, {
-            ...options,
-            headers
-        });
-        
-        if (!response.ok) {
-            const error = await response.json().catch(() => ({}));
-            throw new Error(error.detail || `HTTP ${response.status}`);
+        try {
+            const response = await fetch(url, {
+                ...options,
+                headers,
+                mode: 'cors',
+                credentials: 'include'
+            });
+            
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({}));
+                throw new Error(error.detail || `HTTP ${response.status}`);
+            }
+            
+            return response.json();
+        } catch (error) {
+            console.error('API Error:', error);
+            throw error;
         }
-        
-        return response.json();
     },
 
     // Health Check
@@ -98,9 +119,16 @@ const api = {
     },
 
     async generateApiKey(role, description) {
+        const formData = new URLSearchParams();
+        formData.append('role', role);
+        formData.append('description', description || '');
+        
         return this.request('/admin/api-keys/generate', {
             method: 'POST',
-            body: new URLSearchParams({ role, description })
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: formData.toString()
         });
     },
 
@@ -206,3 +234,7 @@ class TaskPoller {
         }
     }
 }
+
+// Exporter pour utilisation dans d'autres fichiers
+window.api = api;
+window.TaskPoller = TaskPoller;
