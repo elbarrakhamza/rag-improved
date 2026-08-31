@@ -3,6 +3,8 @@ from pydantic import BaseModel, Field
 from asyncpg import Connection
 from loguru import logger
 import asyncio
+from typing import Optional, Dict, Any
+
 from app.core.security import get_api_key
 from app.service.llm import generate
 from app.service.prompt_builder import build_prompt
@@ -13,7 +15,6 @@ from app.service.feedback_analyzer import feedback_analyzer
 from app.api.dependices import get_connection, get_embedder
 from app.api.limiter import limiter
 from app.core.config import settings
-from typing import Optional
 
 router = APIRouter()
 
@@ -31,11 +32,13 @@ async def query(
     query_request: QueryRequest,
     embedder: Embedder = Depends(get_embedder),
     db_connection: Connection = Depends(get_connection),
-    key_info: dict = Depends(get_api_key)
+    key_info: Dict[str, Any] = Depends(get_api_key)
 ):
     """
     Endpoint de question/réponse avec cache et feedback
     """
+    response = None  # Initialiser pour éviter l'erreur "referenced before assignment"
+    
     try:
         async with asyncio.timeout(15):
             question = query_request.question
@@ -58,7 +61,7 @@ async def query(
                     "answer": cached_answer["answer"],
                     "token_usage": cached_answer["token_usage"],
                     "cached": True,
-                    "sources": []  # On ne stocke pas les sources en cache
+                    "sources": []
                 }
             
             # 2. Embedding (avec cache)
@@ -119,10 +122,16 @@ async def query(
             status_code=504,
             detail="Request timed out"
         )
+    except Exception as e:
+        logger.error(f"Erreur lors du traitement: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
     
     return {
-        "answer": response[0],
-        "token_usage": response[1],
-        "sources": sources,
+        "answer": response[0] if response else "Erreur: pas de réponse générée",
+        "token_usage": response[1] if response else 0,
+        "sources": sources if 'sources' in locals() else [],
         "cached": False
     }

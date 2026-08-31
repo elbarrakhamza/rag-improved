@@ -92,6 +92,24 @@ async def upload_documents(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/task/{task_id}")
+async def get_task_status(
+    task_id: str,
+    request: Request,
+    key_info: dict = Depends(get_admin_api_key)
+):
+    """
+    Récupère le statut d'une tâche d'ingestion
+    """
+    from app.tasks.ingestion_task import get_task_status as get_status
+    
+    status = get_status(task_id)
+    if status.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    return status
+
+
 @router.post("/api-keys/generate")
 async def generate_api_key(
     request: Request,
@@ -131,7 +149,7 @@ async def generate_api_key(
     clear_api_key_cache()
     
     return {
-        "api_key": api_key,  # La clé en clair (à communiquer à l'utilisateur)
+        "api_key": api_key,
         "role": role,
         "description": description,
         "message": "Clé API générée avec succès. Conservez-la précieusement."
@@ -314,22 +332,3 @@ async def delete_document(
             raise HTTPException(status_code=404, detail="Document not found")
         
         return {"status": "success", "message": f"Document {decoded_source} deleted"}
-
-
-
-@router.get("/task/{task_id}")
-async def get_task_status(
-    task_id: str,
-    request: Request,
-    key_info: dict = Depends(get_admin_api_key)
-):
-    """
-    Récupère le statut d'une tâche d'ingestion
-    """
-    from app.tasks.ingestion_task import get_task_status as get_status
-    
-    status = get_status(task_id)
-    if status.get("status") == "not_found":
-        raise HTTPException(status_code=404, detail="Task not found")
-    
-    return status
