@@ -6,16 +6,16 @@ asyncpg==0.29.0
 groq==0.9.0
 loguru==0.7.2
 python-dotenv
-FlagEmbedding
-torch
 google-generativeai==0.8.0
 slowapi
 redis==5.0.1
+requests
+python-multipart
+
+# Pour le Smart PDF Processing (optionnel)
 pymupdf
 pdfplumber
 camelot-py
 pytesseract
 pillow
 pyspellchecker
-requests
-python-multipart  # AJOUTÉ
