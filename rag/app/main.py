@@ -85,10 +85,11 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:4200",
-        "http://stage.enset.top",
+        "http://localhost:3000",
+        "https://rag-web.stage.enset.top",  # Frontend
+        "https://api-rag.stage.enset.top",  # API elle-même
         "https://stage.enset.top",
-        "https://siop.stage.enset.top",
-        "https://rag-web.stage.enset.top",
+        "https://siop.stage.enset.top"
     ],
     allow_credentials=True,
     allow_methods=["*"],

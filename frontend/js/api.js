@@ -1,5 +1,8 @@
 // API Configuration
-const API_BASE = 'http://localhost:8000';
+// Utiliser l'URL de l'API en production, ou localhost en développement
+const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? 'http://localhost:8000'
+    : 'https://api-rag.stage.enset.top';
 
 // Store API key (from localStorage)
 let apiKey = localStorage.getItem('apiKey') || '';
@@ -26,17 +29,23 @@ const api = {
             headers['X-API-Key'] = apiKey;
         }
         
-        const response = await fetch(url, {
-            ...options,
-            headers
-        });
-        
-        if (!response.ok) {
-            const error = await response.json().catch(() => ({}));
-            throw new Error(error.detail || `HTTP ${response.status}`);
+        try {
+            const response = await fetch(url, {
+                ...options,
+                headers,
+                mode: 'cors'
+            });
+            
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({}));
+                throw new Error(error.detail || `HTTP ${response.status}`);
+            }
+            
+            return response.json();
+        } catch (error) {
+            console.error('API Error:', error);
+            throw error;
         }
-        
-        return response.json();
     },
 
     // Health Check
@@ -98,9 +107,17 @@ const api = {
     },
 
     async generateApiKey(role, description) {
+        // Utiliser URLSearchParams pour form-data
+        const formData = new URLSearchParams();
+        formData.append('role', role);
+        formData.append('description', description || '');
+        
         return this.request('/admin/api-keys/generate', {
             method: 'POST',
-            body: new URLSearchParams({ role, description })
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: formData.toString()
         });
     },
 
@@ -149,60 +166,3 @@ const api = {
         );
     }
 };
-
-// Task polling
-class TaskPoller {
-    constructor(taskId, onProgress, onComplete, onError) {
-        this.taskId = taskId;
-        this.onProgress = onProgress;
-        this.onComplete = onComplete;
-        this.onError = onError;
-        this.polling = false;
-        this.interval = 1000;
-        this.timeout = 300000; // 5 minutes
-        this.startTime = Date.now();
-    }
-
-    start() {
-        this.polling = true;
-        this.poll();
-    }
-
-    stop() {
-        this.polling = false;
-    }
-
-    async poll() {
-        if (!this.polling) return;
-
-        try {
-            const status = await api.getTaskStatus(this.taskId);
-            
-            if (status.status === 'completed' || status.status === 'failed') {
-                this.polling = false;
-                if (status.status === 'completed') {
-                    this.onComplete(status);
-                } else {
-                    this.onError(status.message || 'Task failed');
-                }
-                return;
-            }
-
-            if (this.onProgress) {
-                this.onProgress(status);
-            }
-
-            // Check timeout
-            if (Date.now() - this.startTime > this.timeout) {
-                this.polling = false;
-                this.onError('Task timeout');
-                return;
-            }
-
-            setTimeout(() => this.poll(), this.interval);
-        } catch (error) {
-            this.polling = false;
-            this.onError(error.message);
-        }
-    }
-}
