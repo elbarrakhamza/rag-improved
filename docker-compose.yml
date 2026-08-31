@@ -84,12 +84,14 @@ services:
 
   # Frontend — domaine assigné via l'onglet Domains de Dokploy
   frontend:
-    image: nginx:alpine
+    image: python:3.10-alpine
     container_name: elevator-frontend
+    working_dir: /app
+    command: python -m http.server 80
+    volumes:
+      - ./frontend:/app:ro
     expose:
       - "80"
-    volumes:
-      - ./frontend:/usr/share/nginx/html:ro
     restart: unless-stopped
     networks:
       - elevator-network
