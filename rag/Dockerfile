@@ -1,6 +1,6 @@
 FROM python:3.10-slim
 
-# Installer les dépendances système
+# Installer les dépendances système (pour OCR et PDF)
 RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     tesseract-ocr-fra \
@@ -25,8 +25,6 @@ COPY data/ ./data/
 ENV PYTHONPATH=/app
 ENV TESSERACT_CMD=/usr/bin/tesseract
 
-# Port exposé
 EXPOSE 8000
 
-# Commande de démarrage
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

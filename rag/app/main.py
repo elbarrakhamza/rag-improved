@@ -21,22 +21,23 @@ import os
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("API Starting...")
+    logger.info("🚀 API Starting...")
     app.state.pool = await get_pool()
-    logger.info("DB Pool initiated")
+    logger.info("✅ DB Pool initiated")
     
-    # Initialiser les tables si nécessaire
+    # Initialiser les tables
     await init_database(app.state.pool)
     
+    # Initialiser l'embedder (API seulement - pas de modèle local)
     app.state.embedder = Embedder()
-    app.state.embedder.load()
-    logger.info("Embedding model loaded")
+    app.state.embedder.load()  # Rien ne charge vraiment, juste vérifie la clé API
+    logger.info("✅ NVIDIA API Embedder ready")
     
     yield
     
     await app.state.pool.close()
     del app.state.embedder
-    print("API Stopping...")
+    logger.info("🛑 API Stopping...")
 
 
 async def init_database(pool):
@@ -47,12 +48,11 @@ async def init_database(pool):
             schema_sql = f.read()
         
         async with pool.acquire() as conn:
-            # Exécuter le script SQL
             for statement in schema_sql.split(";"):
                 if statement.strip():
                     await conn.execute(statement)
         
-        logger.info("Database schema initialized")
+        logger.info("✅ Database schema initialized")
     except Exception as e:
         logger.warning(f"Database initialization warning: {e}")
 
@@ -60,12 +60,11 @@ async def init_database(pool):
 app = FastAPI(
     lifespan=lifespan,
     title="Maintenance Manual RAG API",
-    description="RAG API for elevator maintenance manual with Smart PDF Processing, Cache, Feedback & Roles",
+    description="RAG API with NVIDIA Embeddings (API only)",
     version="2.0.0"
 )
 
 
-# Global exception handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, ex: Exception):
     logger.error(f"Unhandled error: {ex}")
@@ -75,22 +74,19 @@ async def global_exception_handler(request: Request, ex: Exception):
     )
 
 
-# Adding access rate limiter
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
-# Adding middlewares
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:4200",
         "http://localhost:3000",
-        "http://stage.enset.top",
-        "https://stage.enset.top",
-        "https://siop.stage.enset.top",
         "https://rag-web.stage.enset.top",
         "https://api-rag.stage.enset.top",
+        "https://stage.enset.top",
+        "https://siop.stage.enset.top"
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -98,7 +94,6 @@ app.add_middleware(
 )
 
 
-# Adding routers
 app.include_router(query_router)
 app.include_router(admin_router)
 app.include_router(feedback_router)
@@ -169,9 +164,10 @@ async def health(request: Request):
         global_status = "degraded"
         http_status = 503
 
+    # Vérifier l'embedder (API key)
     embedder = getattr(request.app.state, "embedder", None)
-    embedder_ready = embedder is not None and getattr(embedder, "model", None) is not None
-    health_checks["embedder_model_loaded"] = {"ok": embedder_ready}
+    embedder_ready = embedder is not None and hasattr(embedder, "api_key")
+    health_checks["embedder_api_ready"] = {"ok": embedder_ready}
     if not embedder_ready:
         global_status = "degraded"
         http_status = 503
@@ -180,9 +176,6 @@ async def health(request: Request):
     from app.service.cache import embedding_cache
     cache_stats = embedding_cache.get_stats()
     health_checks["redis_cache"] = {"ok": cache_stats.get("enabled", False)}
-    if not cache_stats.get("enabled", False):
-        global_status = "degraded"
-        http_status = 503
 
     return JSONResponse(
         status_code=http_status,

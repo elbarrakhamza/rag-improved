@@ -15,15 +15,17 @@ class Settings(BaseSettings):
 
     # Security
     api_key: str
-    admin_api_key: str  # NOUVEAU: clé admin séparée
+    admin_api_key: str
 
-    # Model
-    embedding_model: str = "BAAI/bge-m3"
+    # NVIDIA API pour les embeddings
+    nvidia_api_key: str  # RENDU OBLIGATOIRE
+    embedding_model: str = "nvidia/nemotron-3-embed-1b"
+    embedding_dim: int = 1024
+    nvidia_api_url: str = "https://integrate.api.nvidia.com/v1/embeddings"
+    
     max_tokens: int = 512
     top_k: int = 7
     min_similarity: float = 0.7
-    mock_embedding_dim: int = 1024
-    skip_embedder_load: bool = False
     healthcheck_internet_url: str = "https://www.google.com/generate_204"
     healthcheck_timeout_seconds: float = 3.0
 
@@ -38,7 +40,6 @@ class Settings(BaseSettings):
     enable_smart_pdf: bool = True
     enable_vision_llm: bool = True
     ocr_lang: str = "fra+ara"
-    nvidia_api_key: Optional[str] = None
 
     # Feedback
     enable_feedback: bool = True
