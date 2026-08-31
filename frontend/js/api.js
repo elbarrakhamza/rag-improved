@@ -1,0 +1,208 @@
+// API Configuration
+const API_BASE = 'http://localhost:8000';
+
+// Store API key (from localStorage)
+let apiKey = localStorage.getItem('apiKey') || '';
+
+// API Client
+const api = {
+    setApiKey(key) {
+        apiKey = key;
+        localStorage.setItem('apiKey', key);
+    },
+
+    getApiKey() {
+        return apiKey;
+    },
+
+    async request(endpoint, options = {}) {
+        const url = `${API_BASE}${endpoint}`;
+        const headers = {
+            'Content-Type': 'application/json',
+            ...options.headers
+        };
+        
+        if (apiKey) {
+            headers['X-API-Key'] = apiKey;
+        }
+        
+        const response = await fetch(url, {
+            ...options,
+            headers
+        });
+        
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.detail || `HTTP ${response.status}`);
+        }
+        
+        return response.json();
+    },
+
+    // Health Check
+    async health() {
+        return this.request('/health');
+    },
+
+    // Query
+    async query(question, useCache = true, topK = null) {
+        return this.request('/query', {
+            method: 'POST',
+            body: JSON.stringify({
+                question,
+                use_cache: useCache,
+                top_k: topK
+            })
+        });
+    },
+
+    // Admin: Upload
+    async upload(formData) {
+        const response = await fetch(`${API_BASE}/admin/upload`, {
+            method: 'POST',
+            headers: {
+                'X-API-Key': apiKey
+            },
+            body: formData
+        });
+        
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.detail || `HTTP ${response.status}`);
+        }
+        
+        return response.json();
+    },
+
+    // Admin: Task Status
+    async getTaskStatus(taskId) {
+        return this.request(`/admin/task/${taskId}`);
+    },
+
+    // Admin: Documents
+    async getDocuments(page = 1, limit = 50, search = '') {
+        const params = new URLSearchParams({ page, limit });
+        if (search) params.append('search', search);
+        return this.request(`/admin/documents?${params}`);
+    },
+
+    async deleteDocument(sourceFile) {
+        return this.request(`/admin/documents/${encodeURIComponent(sourceFile)}`, {
+            method: 'DELETE'
+        });
+    },
+
+    // Admin: API Keys
+    async getApiKeys() {
+        return this.request('/admin/api-keys');
+    },
+
+    async generateApiKey(role, description) {
+        return this.request('/admin/api-keys/generate', {
+            method: 'POST',
+            body: new URLSearchParams({ role, description })
+        });
+    },
+
+    async toggleApiKey(keyId) {
+        return this.request(`/admin/api-keys/${keyId}/toggle`, {
+            method: 'POST'
+        });
+    },
+
+    async deleteApiKey(keyId) {
+        return this.request(`/admin/api-keys/${keyId}`, {
+            method: 'DELETE'
+        });
+    },
+
+    // Admin: Cache
+    async getCacheStats() {
+        return this.request('/admin/cache/stats');
+    },
+
+    async clearCache() {
+        return this.request('/admin/cache/clear', {
+            method: 'DELETE'
+        });
+    },
+
+    // Feedback
+    async submitFeedback(data) {
+        return this.request('/feedback/submit', {
+            method: 'POST',
+            body: JSON.stringify(data)
+        });
+    },
+
+    async getQuestionStats(question) {
+        return this.request(`/feedback/stats/question?question=${encodeURIComponent(question)}`);
+    },
+
+    async getTopQuestions(limit = 10, daysBack = 30) {
+        return this.request(`/feedback/top-questions?limit=${limit}&days_back=${daysBack}`);
+    },
+
+    async getLowPerformingQuestions(minFrequency = 3, maxAvgScore = 3.0, daysBack = 30) {
+        return this.request(
+            `/feedback/low-performing-questions?min_frequency=${minFrequency}&max_avg_score=${maxAvgScore}&days_back=${daysBack}`
+        );
+    }
+};
+
+// Task polling
+class TaskPoller {
+    constructor(taskId, onProgress, onComplete, onError) {
+        this.taskId = taskId;
+        this.onProgress = onProgress;
+        this.onComplete = onComplete;
+        this.onError = onError;
+        this.polling = false;
+        this.interval = 1000;
+        this.timeout = 300000; // 5 minutes
+        this.startTime = Date.now();
+    }
+
+    start() {
+        this.polling = true;
+        this.poll();
+    }
+
+    stop() {
+        this.polling = false;
+    }
+
+    async poll() {
+        if (!this.polling) return;
+
+        try {
+            const status = await api.getTaskStatus(this.taskId);
+            
+            if (status.status === 'completed' || status.status === 'failed') {
+                this.polling = false;
+                if (status.status === 'completed') {
+                    this.onComplete(status);
+                } else {
+                    this.onError(status.message || 'Task failed');
+                }
+                return;
+            }
+
+            if (this.onProgress) {
+                this.onProgress(status);
+            }
+
+            // Check timeout
+            if (Date.now() - this.startTime > this.timeout) {
+                this.polling = false;
+                this.onError('Task timeout');
+                return;
+            }
+
+            setTimeout(() => this.poll(), this.interval);
+        } catch (error) {
+            this.polling = false;
+            this.onError(error.message);
+        }
+    }
+}

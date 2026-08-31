@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# Byte-compiled / optimized / DLL files
+*.so
+*.dylib
+
+# Distribution / packaging
+.Python
+build/
+dist/
+eggs/
+parts/
+bin/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Pytest
+.pytest_cache/
+
+# mypy
+.mypy_cache/
+
+# IDEs
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Database
+*.db
+
+# Node
+node_modules/
+
+# GitHub Actions artifacts
+.github/workflows/**/cache/
+
+# Local data (do not commit large document corpora)
+rag/data/documents/
+**/documents/
+**/documents/**
+
+rag/data/documents/.venv
+rag/data/documents/.venv311

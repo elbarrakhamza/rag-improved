@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG Admin - Maintenance Elevator</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏗️</text></svg>">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <nav class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h2>🏗️ RAG Admin</h2>
+                <span class="version">v2.0</span>
+            </div>
+            
+            <ul class="sidebar-nav">
+                <li class="nav-item active" data-tab="dashboard">
+                    <span class="icon">📊</span>
+                    <span class="label">Dashboard</span>
+                </li>
+                <li class="nav-item" data-tab="upload">
+                    <span class="icon">📤</span>
+                    <span class="label">Upload</span>
+                </li>
+                <li class="nav-item" data-tab="documents">
+                    <span class="icon">📄</span>
+                    <span class="label">Documents</span>
+                </li>
+                <li class="nav-item" data-tab="apikeys">
+                    <span class="icon">🔑</span>
+                    <span class="label">API Keys</span>
+                </li>
+                <li class="nav-item" data-tab="feedback">
+                    <span class="icon">💬</span>
+                    <span class="label">Feedback</span>
+                </li>
+                <li class="nav-item" data-tab="cache">
+                    <span class="icon">⚡</span>
+                    <span class="label">Cache</span>
+                </li>
+            </ul>
+            
+            <div class="sidebar-footer">
+                <div class="api-key-status">
+                    <span class="dot green"></span>
+                    <span>Connected</span>
+                </div>
+                <button class="btn-logout" id="logoutBtn">🚪 Logout</button>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="main-header">
+                <div class="header-left">
+                    <button class="menu-toggle" id="menuToggle">☰</button>
+                    <h1 id="pageTitle">Dashboard</h1>
+                </div>
+                <div class="header-right">
+                    <div class="notification-bell">
+                        <span class="bell-icon">🔔</span>
+                        <span class="badge" id="notificationBadge">0</span>
+                    </div>
+                    <div class="user-info">
+                        <span class="user-avatar">👤</span>
+                        <span class="user-role" id="userRole">Admin</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Dashboard Tab -->
+            <section id="tab-dashboard" class="tab-content active">
+                <div class="dashboard-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">📄</div>
+                        <div class="stat-info">
+                            <span class="stat-label">Documents</span>
+                            <span class="stat-value" id="statDocuments">0</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">📦</div>
+                        <div class="stat-info">
+                            <span class="stat-label">Chunks</span>
+                            <span class="stat-value" id="statChunks">0</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">💬</div>
+                        <div class="stat-info">
+                            <span class="stat-label">Feedback</span>
+                            <span class="stat-value" id="statFeedback">0</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">⚡</div>
+                        <div class="stat-info">
+                            <span class="stat-label">Cache</span>
+                            <span class="stat-value" id="statCache">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dashboard-charts">
+                    <div class="chart-card">
+                        <h3>Top Questions</h3>
+                        <div id="topQuestionsList" class="question-list"></div>
+                    </div>
+                    <div class="chart-card">
+                        <h3>Low Performing Questions</h3>
+                        <div id="lowPerformingList" class="question-list"></div>
+                    </div>
+                </div>
+
+                <div class="dashboard-tasks">
+                    <h3>Recent Tasks</h3>
+                    <div id="recentTasks" class="task-list"></div>
+                </div>
+            </section>
+
+            <!-- Upload Tab -->
+            <section id="tab-upload" class="tab-content">
+                <div class="upload-container">
+                    <div class="upload-area" id="uploadArea">
+                        <div class="upload-icon">📤</div>
+                        <h3>Drag & Drop files here</h3>
+                        <p>or</p>
+                        <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+                            Browse Files
+                        </button>
+                        <input type="file" id="fileInput" multiple accept=".pdf,.txt,.md,.markdown,.zip" style="display:none">
+                        <div id="fileList" class="file-list"></div>
+                    </div>
+
+                    <div class="upload-metadata">
+                        <h3>Metadata</h3>
+                        <form id="metadataForm">
+                            <div class="form-group">
+                                <label>Brand *</label>
+                                <input type="text" id="metaBrand" placeholder="e.g., OTIS, Hyundai" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Elevator Model *</label>
+                                <input type="text" id="metaModel" placeholder="e.g., Gen2, NEXIEZ" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Document Type</label>
+                                <select id="metaType">
+                                    <option value="maintenance_manual">Maintenance Manual</option>
+                                    <option value="installation_manual">Installation Manual</option>
+                                    <option value="troubleshooting_guide">Troubleshooting Guide</option>
+                                    <option value="user_manual">User Manual</option>
+                                    <option value="technical_spec">Technical Specification</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Document Version</label>
+                                <input type="text" id="metaVersion" placeholder="e.g., v1.0, 2026-01">
+                            </div>
+                            <div class="form-group">
+                                <label>Visibility</label>
+                                <select id="metaVisibility">
+                                    <option value="public">Public (Everyone)</option>
+                                    <option value="private">Private (Employees only)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Options</label>
+                                <div class="checkbox-group">
+                                    <label>
+                                        <input type="checkbox" id="optSmartPDF" checked>
+                                        Smart PDF Processing
+                                    </label>
+                                    <label>
+                                        <input type="checkbox" id="optVisionLLM" checked>
+                                        Vision LLM (Image descriptions)
+                                    </label>
+                                    <label>
+                                        <input type="checkbox" id="optSkipEmbedding">
+                                        Test Mode (Skip Embeddings)
+                                    </label>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-success btn-block" id="uploadBtn">
+                                🚀 Upload & Process
+                            </button>
+                        </form>
+                    </div>
+
+                    <div class="upload-progress" id="uploadProgress" style="display:none;">
+                        <h3>Processing...</h3>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progressFill" style="width:0%"></div>
+                        </div>
+                        <p id="progressMessage">Initializing...</p>
+                        <div id="taskStatus" class="task-status"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Documents Tab -->
+            <section id="tab-documents" class="tab-content">
+                <div class="documents-header">
+                    <h3>Indexed Documents</h3>
+                    <div class="documents-actions">
+                        <input type="text" id="docSearch" placeholder="🔍 Search documents..." class="search-input">
+                        <button class="btn btn-secondary" id="refreshDocsBtn">🔄 Refresh</button>
+                    </div>
+                </div>
+                <div id="documentsList" class="documents-list">
+                    <p class="loading-text">Loading documents...</p>
+                </div>
+                <div class="pagination" id="docPagination"></div>
+            </section>
+
+            <!-- API Keys Tab -->
+            <section id="tab-apikeys" class="tab-content">
+                <div class="apikeys-header">
+                    <h3>API Keys Management</h3>
+                    <button class="btn btn-primary" id="generateKeyBtn">➕ Generate New Key</button>
+                </div>
+                <div class="apikeys-form" id="generateKeyForm" style="display:none;">
+                    <h4>Generate New API Key</h4>
+                    <div class="form-group">
+                        <label>Role</label>
+                        <select id="newKeyRole">
+                            <option value="public">Public</option>
+                            <option value="employee">Employee</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <input type="text" id="newKeyDesc" placeholder="e.g., OTIS technician team">
+                    </div>
+                    <button class="btn btn-success" id="confirmGenerateBtn">Generate</button>
+                    <button class="btn btn-secondary" id="cancelGenerateBtn">Cancel</button>
+                </div>
+                <div id="apiKeysList" class="apikeys-list">
+                    <p class="loading-text">Loading API keys...</p>
+                </div>
+            </section>
+
+            <!-- Feedback Tab -->
+            <section id="tab-feedback" class="tab-content">
+                <div class="feedback-header">
+                    <h3>Feedback Analytics</h3>
+                    <div class="feedback-filters">
+                        <select id="feedbackFilter" class="filter-select">
+                            <option value="all">All</option>
+                            <option value="high">High Score (4-5)</option>
+                            <option value="medium">Medium Score (2-3)</option>
+                            <option value="low">Low Score (1)</option>
+                        </select>
+                        <button class="btn btn-secondary" id="refreshFeedbackBtn">🔄 Refresh</button>
+                    </div>
+                </div>
+                <div id="feedbackStats" class="feedback-stats">
+                    <div class="stat-mini">
+                        <span class="label">Total Feedback</span>
+                        <span class="value" id="fbTotal">0</span>
+                    </div>
+                    <div class="stat-mini">
+                        <span class="label">Avg Score</span>
+                        <span class="value" id="fbAvg">0</span>
+                    </div>
+                    <div class="stat-mini">
+                        <span class="label">Helpful %</span>
+                        <span class="value" id="fbHelpful">0%</span>
+                    </div>
+                </div>
+                <div id="feedbackList" class="feedback-list">
+                    <p class="loading-text">Loading feedback...</p>
+                </div>
+            </section>
+
+            <!-- Cache Tab -->
+            <section id="tab-cache" class="tab-content">
+                <div class="cache-header">
+                    <h3>Cache Management</h3>
+                    <button class="btn btn-danger" id="clearCacheBtn">🗑️ Clear Cache</button>
+                </div>
+                <div class="cache-stats" id="cacheStats">
+                    <div class="stat-mini">
+                        <span class="label">Status</span>
+                        <span class="value" id="cacheStatus">Checking...</span>
+                    </div>
+                    <div class="stat-mini">
+                        <span class="label">Cached Embeddings</span>
+                        <span class="value" id="cacheEmbeddings">0</span>
+                    </div>
+                    <div class="stat-mini">
+                        <span class="label">Cached Answers</span>
+                        <span class="value" id="cacheAnswers">0</span>
+                    </div>
+                    <div class="stat-mini">
+                        <span class="label">Total</span>
+                        <span class="value" id="cacheTotal">0</span>
+                    </div>
+                </div>
+                <div class="cache-actions">
+                    <button class="btn btn-secondary" id="refreshCacheBtn">🔄 Refresh Stats</button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast"></div>
+
+    <script src="js/api.js"></script>
+    <script src="js/upload.js"></script>
+    <script src="js/documents.js"></script>
+    <script src="js/apikeys.js"></script>
+    <script src="js/feedback.js"></script>
+    <script src="js/cache.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

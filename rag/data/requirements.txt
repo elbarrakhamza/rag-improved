@@ -1,0 +1,8 @@
+torch
+FlagEmbedding
+langchain
+langchain-text-splitters
+pymupdf4llm
+requests
+psycopg2-binary
+python-dotenv
