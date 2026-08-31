@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 from asyncpg import Connection
 from loguru import logger
 import asyncio
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 from app.core.security import get_api_key
 from app.service.llm import generate
@@ -25,7 +25,23 @@ class QueryRequest(BaseModel):
     top_k: Optional[int] = Field(default=None, ge=1, le=20)
 
 
-@router.post("/query")
+class SourceInfo(BaseModel):
+    page: str
+    source_file: str
+    content: str
+    similarity: float
+    feedback_score: float
+    feedback_count: int
+
+
+class QueryResponse(BaseModel):
+    answer: str
+    token_usage: int
+    sources: List[SourceInfo] = []
+    cached: bool = False
+
+
+@router.post("/query", response_model=QueryResponse)
 @limiter.limit("3/minute")
 async def query(
     request: Request,
@@ -37,7 +53,8 @@ async def query(
     """
     Endpoint de question/réponse avec cache et feedback
     """
-    response = None  # Initialiser pour éviter l'erreur "referenced before assignment"
+    response = None
+    sources = []
     
     try:
         async with asyncio.timeout(15):
@@ -55,14 +72,13 @@ async def query(
             
             if cached_answer:
                 logger.info(f"Réponse en cache pour: {question[:50]}...")
-                # Enregistrer la question pour analyse
                 await feedback_analyzer.record_question_pattern(db_connection, question)
-                return {
-                    "answer": cached_answer["answer"],
-                    "token_usage": cached_answer["token_usage"],
-                    "cached": True,
-                    "sources": []
-                }
+                return QueryResponse(
+                    answer=cached_answer["answer"],
+                    token_usage=cached_answer["token_usage"],
+                    sources=[],
+                    cached=True
+                )
             
             # 2. Embedding (avec cache)
             embedded_question = embedder.embed(question, use_cache=use_cache)
@@ -79,14 +95,13 @@ async def query(
             
             if len(retrieved_chunks) == 0:
                 logger.warning("Aucun chunk trouvé pour la question")
-                # Enregistrer la question sans réponse
                 await feedback_analyzer.record_question_pattern(db_connection, question)
-                return {
-                    "answer": "Information not found",
-                    "token_usage": 0,
-                    "sources": [],
-                    "cached": False
-                }
+                return QueryResponse(
+                    answer="Information not found",
+                    token_usage=0,
+                    sources=[],
+                    cached=False
+                )
             
             logger.info(f"{len(retrieved_chunks)} chunks récupérés")
             
@@ -105,17 +120,18 @@ async def query(
             await feedback_analyzer.record_question_pattern(db_connection, question)
             
             # 7. Préparer les sources
-            sources = []
             for chunk in retrieved_chunks:
                 metadata = chunk.get("metadata", {})
-                sources.append({
-                    "page": metadata.get("page_number", "N/A"),
-                    "source_file": metadata.get("source_file", "N/A"),
-                    "content": chunk.get("content", "")[:200] + "...",
-                    "similarity": chunk.get("similarity", 0),
-                    "feedback_score": chunk.get("feedback_score", 0),
-                    "feedback_count": chunk.get("feedback_count", 0)
-                })
+                sources.append(
+                    SourceInfo(
+                        page=str(metadata.get("page_number", "N/A")),
+                        source_file=metadata.get("source_file", "N/A"),
+                        content=chunk.get("content", "")[:200] + "...",
+                        similarity=chunk.get("similarity", 0),
+                        feedback_score=chunk.get("feedback_score", 0),
+                        feedback_count=chunk.get("feedback_count", 0)
+                    )
+                )
 
     except asyncio.TimeoutError:
         raise HTTPException(
@@ -129,9 +145,9 @@ async def query(
             detail=f"Internal server error: {str(e)}"
         )
     
-    return {
-        "answer": response[0] if response else "Erreur: pas de réponse générée",
-        "token_usage": response[1] if response else 0,
-        "sources": sources if 'sources' in locals() else [],
-        "cached": False
-    }
+    return QueryResponse(
+        answer=response[0] if response else "Erreur: pas de réponse générée",
+        token_usage=response[1] if response else 0,
+        sources=sources,
+        cached=False
+    )
