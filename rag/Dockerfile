@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr-eng \
     ghostscript \
     poppler-utils \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

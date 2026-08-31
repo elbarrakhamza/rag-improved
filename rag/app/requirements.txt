@@ -18,3 +18,4 @@ pytesseract
 pillow
 pyspellchecker
 requests
+python-multipart  # AJOUTÉ
