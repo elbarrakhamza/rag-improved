@@ -87,7 +87,8 @@ app.add_middleware(
         "http://localhost:4200",
         "http://stage.enset.top",
         "https://stage.enset.top",
-        "https://siop.stage.enset.top"
+        "https://siop.stage.enset.top",
+        "https://rag-web.stage.enset.top",
     ],
     allow_credentials=True,
     allow_methods=["*"],
