@@ -86,10 +86,11 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:4200",
         "http://localhost:3000",
-        "https://rag-web.stage.enset.top",  # Frontend
-        "https://api-rag.stage.enset.top",  # API elle-même
+        "http://stage.enset.top",
         "https://stage.enset.top",
-        "https://siop.stage.enset.top"
+        "https://siop.stage.enset.top",
+        "https://rag-web.stage.enset.top",
+        "https://api-rag.stage.enset.top",
     ],
     allow_credentials=True,
     allow_methods=["*"],

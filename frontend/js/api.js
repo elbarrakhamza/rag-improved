@@ -1,5 +1,5 @@
 // API Configuration
-const API_BASE = 'https://api-rag.stage.enset.top';
+const API_BASE = 'http://localhost:8000';
 
 // Store API key (from localStorage)
 let apiKey = localStorage.getItem('apiKey') || '';
