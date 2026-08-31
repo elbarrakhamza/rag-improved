@@ -7,38 +7,6 @@ const app = {
         
         // Check API connection
         this.checkApiConnection();
-        
-        // Gérer la clé API depuis l'URL ou localStorage
-        this.handleApiKey();
-    },
-
-    handleApiKey() {
-        // Vérifier si une clé API est dans l'URL (paramètre ?api_key=xxx)
-        const urlParams = new URLSearchParams(window.location.search);
-        const apiKeyParam = urlParams.get('api_key');
-        
-        if (apiKeyParam) {
-            api.setApiKey(apiKeyParam);
-            // Nettoyer l'URL
-            window.history.replaceState({}, document.title, window.location.pathname);
-            showToast('API Key chargée depuis l\'URL', 'success');
-        }
-        
-        // Si pas de clé, demander
-        if (!api.getApiKey()) {
-            setTimeout(() => this.showApiKeyModal(), 500);
-        }
-    },
-
-    showApiKeyModal() {
-        const key = prompt('Entrez votre clé API admin :');
-        if (key) {
-            api.setApiKey(key);
-            this.checkApiConnection();
-        } else {
-            // Réessayer après 3 secondes
-            setTimeout(() => this.showApiKeyModal(), 3000);
-        }
     },
 
     setupNavigation() {
@@ -48,35 +16,41 @@ const app = {
         
         navItems.forEach(item => {
             item.addEventListener('click', () => {
+                // Update active nav
                 navItems.forEach(n => n.classList.remove('active'));
                 item.classList.add('active');
                 
+                // Show corresponding tab
                 const tabId = item.dataset.tab;
                 tabs.forEach(t => t.classList.remove('active'));
                 document.getElementById(`tab-${tabId}`).classList.add('active');
                 
+                // Update title
                 const label = item.querySelector('.label').textContent;
                 pageTitle.textContent = label;
                 
+                // Trigger refresh for some tabs
                 if (tabId === 'documents' && window.documentsManager) {
                     window.documentsManager.loadDocuments();
                 }
                 if (tabId === 'apikeys') {
-                    // Refresh API keys
+                    // API keys will refresh on click
                 }
                 if (tabId === 'feedback') {
-                    // Refresh feedback
+                    // Feedback will refresh on click
                 }
                 if (tabId === 'cache') {
-                    // Refresh cache stats
+                    // Cache stats will refresh on click
                 }
             });
         });
 
+        // Menu toggle for mobile
         document.getElementById('menuToggle').addEventListener('click', () => {
             document.getElementById('sidebar').classList.toggle('open');
         });
 
+        // Close sidebar on outside click (mobile)
         document.addEventListener('click', (e) => {
             const sidebar = document.getElementById('sidebar');
             const toggle = document.getElementById('menuToggle');
@@ -90,41 +64,45 @@ const app = {
 
     setupLogout() {
         document.getElementById('logoutBtn').addEventListener('click', () => {
-            if (confirm('Êtes-vous sûr de vouloir vous déconnecter ?')) {
+            if (confirm('Are you sure you want to logout?')) {
                 localStorage.removeItem('apiKey');
-                document.getElementById('userRole').textContent = 'Non connecté';
-                showToast('Déconnecté', 'info');
-                setTimeout(() => this.showApiKeyModal(), 1000);
+                document.getElementById('apiKeyInput').value = '';
+                // Reload to show login screen
+                location.reload();
             }
         });
     },
 
     async checkApiConnection() {
-        const statusElement = document.querySelector('.api-key-status span:last-child');
-        const dotElement = document.querySelector('.dot');
-        
         try {
             await api.health();
-            dotElement.className = 'dot green';
-            statusElement.textContent = 'Connecté';
-            document.getElementById('userRole').textContent = 'Admin';
-            showToast('✅ Connecté à l\'API', 'success', 2000);
+            document.querySelector('.dot').className = 'dot green';
+            document.querySelector('.api-key-status span:last-child').textContent = 'Connected';
         } catch (error) {
-            dotElement.className = 'dot red';
-            statusElement.textContent = 'Déconnecté';
-            document.getElementById('userRole').textContent = '❌ Erreur';
-            showToast('❌ Impossible de se connecter à l\'API', 'error');
+            document.querySelector('.dot').className = 'dot red';
+            document.querySelector('.api-key-status span:last-child').textContent = 'Disconnected';
+            showToast('Cannot connect to API. Please check if the server is running.', 'error');
         }
     },
 
     async loadDashboard() {
         try {
+            // Load stats
             const docs = await api.getDocuments(1, 1);
             document.getElementById('statDocuments').textContent = docs.total || 0;
             
+            // Get cache stats for total cache items
             const cacheStats = await api.getCacheStats();
             document.getElementById('statCache').textContent = cacheStats.total_cached || 0;
             
+            // Approximate chunks count from first document
+            // In a real implementation, you'd have a dedicated endpoint
+            const allDocs = await api.getDocuments(1, 100);
+            let totalChunks = 0;
+            // This is a placeholder - in production you'd have a proper endpoint
+            document.getElementById('statChunks').textContent = '...';
+            
+            // Feedback count from top questions
             const topQuestions = await api.getTopQuestions(1);
             document.getElementById('statFeedback').textContent = topQuestions.length || 0;
             
@@ -147,7 +125,21 @@ function showToast(message, type = 'info', duration = 5000) {
     }, duration);
 }
 
+// API Key input dialog (simple version)
+function showApiKeyInput() {
+    const key = prompt('Enter your API Key:');
+    if (key) {
+        api.setApiKey(key);
+        location.reload();
+    }
+}
+
 // Initialization
 document.addEventListener('DOMContentLoaded', () => {
+    // Check if API key is set
+    if (!api.getApiKey()) {
+        showApiKeyInput();
+    }
+    
     app.init();
 });
