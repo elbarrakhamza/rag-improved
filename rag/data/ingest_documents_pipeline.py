@@ -26,6 +26,14 @@ from write_embeddings_to_postgres import (
 # Import du smart PDF processor (SANS torch)
 from smart_pdf_processor import process_pdf_smart
 
+# AJOUT: Import de fitz pour la lecture des PDFs
+try:
+    import fitz  # PyMuPDF
+    FITZ_AVAILABLE = True
+except ImportError:
+    FITZ_AVAILABLE = False
+    print("⚠️ fitz (PyMuPDF) non disponible - les PDFs ne pourront pas être lus")
+
 SUPPORTED_EXTENSIONS = {".pdf", ".txt", ".md", ".markdown"}
 
 
@@ -55,7 +63,7 @@ def process_file_with_smart_pdf(
     # Ajouter les métadonnées supplémentaires
     for chunk in chunks:
         chunk["metadata"].update(metadata)
-        chunk["metadata"]["chunk_index"] = 0  # Sera mis à jour plus tard
+        chunk["metadata"]["chunk_index"] = 0
         chunk["metadata"]["chunk_total"] = 0
         chunk["metadata"] = normalize_metadata(chunk["metadata"])
     
@@ -106,13 +114,22 @@ def collect_jobs_from_manifest(manifest_path: str) -> List[IngestionJob]:
 
 
 def read_pdf_pages(path: Path) -> List[Dict[str, Any]]:
+    """Lit les pages d'un PDF avec fitz"""
+    if not FITZ_AVAILABLE:
+        print("⚠️ fitz non disponible, impossible de lire le PDF")
+        return []
+    
     extracted_pages: List[Dict[str, Any]] = []
-    with fitz.open(path) as pdf:
-        for page_index, page in enumerate(pdf, start=1):
-            page_text = page.get_text("text").strip()
-            if not page_text:
-                continue
-            extracted_pages.append({"text": page_text, "metadata": {"page_number": page_index}})
+    try:
+        with fitz.open(path) as pdf:
+            for page_index, page in enumerate(pdf, start=1):
+                page_text = page.get_text("text").strip()
+                if not page_text:
+                    continue
+                extracted_pages.append({"text": page_text, "metadata": {"page_number": page_index}})
+    except Exception as e:
+        print(f"❌ Erreur lors de la lecture du PDF {path}: {e}")
+    
     return extracted_pages
 
 
@@ -292,7 +309,6 @@ def save_chunks_to_json(chunks: List[Dict[str, Any]], output_path: str) -> None:
     output_file = Path(output_path)
     output_file.parent.mkdir(parents=True, exist_ok=True)
     
-    # Créer une copie sans les embeddings pour un affichage plus lisible
     chunks_display = []
     for chunk in chunks:
         chunk_copy = {
@@ -317,13 +333,11 @@ def print_chunk_summary(chunks: List[Dict[str, Any]], skip_embedding: bool = Fal
     print(f"Nombre total de chunks: {len(chunks)}")
     
     if chunks:
-        # Statistiques
         total_chars = sum(len(c["page_content"]) for c in chunks)
         avg_chars = total_chars / len(chunks) if chunks else 0
         print(f"Total caractères: {total_chars}")
         print(f"Moyenne caractères par chunk: {avg_chars:.0f}")
         
-        # Métadonnées uniques
         sources = set()
         pages = set()
         brands = set()
@@ -345,7 +359,6 @@ def print_chunk_summary(chunks: List[Dict[str, Any]], skip_embedding: bool = Fal
         print(f"Marques: {', '.join(brands) if brands else 'N/A'}")
         print(f"Modèles: {', '.join(models) if models else 'N/A'}")
         
-        # Aperçu du premier chunk
         if chunks:
             print("\n" + "-" * 40)
             print("📝 APERÇU DU PREMIER CHUNK:")
@@ -388,21 +401,11 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--chunk-overlap", type=int, default=150, help="Chunk overlap in characters.")
     parser.add_argument("--max-tokens", type=int, default=512, help="Embedding model max sequence length.")
     parser.add_argument("--batch-size", type=int, default=8, help="Embedding batch size.")
-    parser.add_argument("--use-smart-pdf", action="store_true", help="Use smart PDF processing (OCR, tables, images).")
-    parser.add_argument("--use-vision-llm", action="store_true", default=True, help="Use vision LLM for image descriptions.")
+    parser.add_argument("--use-smart-pdf", action="store_true", help="Use smart PDF processing.")
+    parser.add_argument("--use-vision-llm", action="store_true", default=True, help="Use vision LLM.")
     parser.add_argument("--no-vision-llm", dest="use_vision_llm", action="store_false", help="Disable vision LLM.")
-    
-    # NOUVEAU: Option pour sauter l'embedding (mode test)
-    parser.add_argument(
-        "--skip-embedding", 
-        action="store_true", 
-        help="Skip embedding generation and database insertion (test mode)."
-    )
-    parser.add_argument(
-        "--no-db-insert", 
-        action="store_true", 
-        help="Skip database insertion (only generate chunks)."
-    )
+    parser.add_argument("--skip-embedding", action="store_true", help="Skip embedding generation.")
+    parser.add_argument("--no-db-insert", action="store_true", help="Skip database insertion.")
     
     parser.set_defaults(use_vision_llm=True)
     return parser.parse_args()
@@ -413,23 +416,17 @@ def main() -> None:
     if not args.inputs and not args.manifest:
         raise ValueError("Provide --inputs and/or --manifest.")
     
-    # Avertissement si mode test
     if args.skip_embedding:
         print("\n" + "⚠️" * 20)
         print("  MODE TEST ACTIVÉ (--skip-embedding)")
-        print("  - Aucun embedding ne sera généré")
-        print("  - Aucune insertion en base de données")
-        print("  - Les chunks seront sauvegardés en JSON si --output-json est fourni")
         print("⚠️" * 20 + "\n")
     
     if not TORCH_AVAILABLE and not args.skip_embedding:
         print("\n" + "⚠️" * 20)
         print("  TORCH NON DISPONIBLE")
-        print("  - Les embeddings ne peuvent pas être générés localement")
         print("  - Utilisez --skip-embedding pour le mode test")
-        print("  - Ou installez torch: pip install torch FlagEmbedding")
         print("⚠️" * 20 + "\n")
-        args.skip_embedding = True  # Forcer le mode skip
+        args.skip_embedding = True
 
     base_metadata = {
         "brand": args.brand,
@@ -462,14 +459,11 @@ def main() -> None:
     if not chunks:
         raise ValueError("No chunks were generated from input documents.")
 
-    # Afficher le résumé
     print_chunk_summary(chunks, skip_embedding=args.skip_embedding)
 
-    # Sauvegarder en JSON si demandé
     if args.output_json:
         save_chunks_to_json(chunks, args.output_json)
 
-    # Générer les embeddings (sauf si skip)
     enrich_chunks_with_embeddings(
         chunks=chunks,
         embedding_model=args.embedding_model,
@@ -478,12 +472,9 @@ def main() -> None:
         skip_embedding=args.skip_embedding,
     )
 
-    # Insertion en base de données (sauf si skip ou no-db-insert)
     if args.skip_embedding or args.no_db_insert:
-        print(f"\n⏭️  Insertion en base de données SKIPPÉE (mode test)")
+        print(f"\n⏭️  Insertion DB SKIPPÉE")
         print(f"✅ Traitement terminé - {len(chunks)} chunks générés")
-        if args.output_json:
-            print(f"📄 Les chunks sont disponibles dans: {args.output_json}")
     else:
         print(f"\n💾 Insertion dans PostgreSQL...")
         conn = get_postgres_connection(args.env_file)
@@ -491,19 +482,13 @@ def main() -> None:
             inserted = insert_chunks_with_embeddings(conn, chunks)
             print(f"✅ Inserted {inserted} chunks into vector database.")
         finally:
-            conn.close()
+            if conn:
+                conn.close()
 
-    # Résumé final
     print("\n" + "=" * 80)
     print("✅ INGESTION TERMINÉE")
     print("=" * 80)
     print(f"📊 Chunks générés: {len(chunks)}")
-    if args.skip_embedding or args.no_db_insert:
-        print("💾 Base de données: NON INSÉRÉ (mode test)")
-    else:
-        print("💾 Base de données: INSÉRÉ")
-    if args.output_json:
-        print(f"📄 Fichier JSON: {args.output_json}")
     print("=" * 80 + "\n")
 
 
