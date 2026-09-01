@@ -14,16 +14,15 @@ async def retrive(
 ) -> List[Dict[str, Any]]:
     """
     Recherche les chunks pertinents avec filtrage par rôle
-    - Public: voit seulement les documents publics
-    - Admin/Employee: voit TOUS les documents (publics + privés) sans priorité
     """
     top_k = top_k if top_k is not None else settings.top_k
     
-    # Pour admin/employee: voir TOUS les documents (publics + privés)
     if role != "public":
-        logger.info(f"🔍 Admin/Employee: recherche dans TOUS les documents")
+        # Pour admin/employee: RECHERCHER DANS LES DEUX
+        logger.info(f"🔍 Admin: recherche dans documents publics ET privés")
         
-        query = f"""
+        # 1. Recherche dans les documents publics
+        query_public = """
             SELECT  
                 content,
                 metadata,
@@ -32,19 +31,45 @@ async def retrive(
                 feedback_count
             FROM documents
             WHERE 1 - (embedding <=> $1::vector) >= $2
+            AND (metadata->>'visibility' = 'public' OR metadata->>'visibility' IS NULL)
             ORDER BY similarity DESC
             LIMIT $3
         """
         
-        rows = await db_con.fetch(
-            query,
+        public_rows = await db_con.fetch(
+            query_public,
             embedding,
             settings.min_similarity,
             top_k
         )
         
+        # 2. Recherche dans les documents privés
+        query_private = """
+            SELECT  
+                content,
+                metadata,
+                1 - (embedding <=> $1::vector) AS similarity,
+                feedback_score,
+                feedback_count
+            FROM documents
+            WHERE 1 - (embedding <=> $1::vector) >= $2
+            AND metadata->>'visibility' = 'private'
+            ORDER BY similarity DESC
+            LIMIT $3
+        """
+        
+        private_rows = await db_con.fetch(
+            query_private,
+            embedding,
+            settings.min_similarity,
+            top_k
+        )
+        
+        # 3. Combiner les résultats
         results = []
-        for row in rows:
+        
+        # Ajouter les résultats publics
+        for row in public_rows:
             results.append({
                 "content": row["content"],
                 "metadata": json.loads(row["metadata"]),
@@ -53,17 +78,38 @@ async def retrive(
                 "feedback_count": int(row.get("feedback_count") or 0)
             })
         
+        # Ajouter les résultats privés
+        for row in private_rows:
+            results.append({
+                "content": row["content"],
+                "metadata": json.loads(row["metadata"]),
+                "similarity": float(row["similarity"]),
+                "feedback_score": float(row.get("feedback_score") or 0),
+                "feedback_count": int(row.get("feedback_count") or 0)
+            })
+        
+        # Trier par similarité décroissante
+        results.sort(key=lambda x: x["similarity"], reverse=True)
+        
+        # Limiter au nombre demandé
+        results = results[:top_k]
+        
         if len(results) > 0:
             visibilities = [r["metadata"].get("visibility", "public") for r in results]
-            logger.info(f"   Visibilités trouvées: {set(visibilities)}")
+            sources = [r["metadata"].get("source_file", "unknown") for r in results]
+            logger.info(f"✅ {len(results)} résultats combinés pour admin")
+            logger.info(f"   Visibilités: {set(visibilities)}")
+            logger.info(f"   Sources: {set(sources)}")
+        else:
+            logger.info(f"⚠️ Aucun résultat trouvé (similarité > {settings.min_similarity})")
         
-        logger.info(f"✅ {len(results)} résultats trouvés pour admin/employee")
+        return results
         
     else:
-        # Pour public: voir seulement les documents publics
+        # Pour public: seulement les documents publics
         logger.info(f"🔍 Public: recherche dans les documents publics uniquement")
         
-        query = f"""
+        query = """
             SELECT  
                 content,
                 metadata,
@@ -95,8 +141,7 @@ async def retrive(
             })
         
         logger.info(f"✅ {len(results)} résultats publics trouvés")
-    
-    return results
+        return results
 
 
 async def update_feedback_score(
