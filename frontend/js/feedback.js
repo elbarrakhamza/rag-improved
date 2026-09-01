@@ -18,42 +18,38 @@ const feedbackManager = {
 
     async loadStats() {
         try {
-            // Get stats from top questions
             const topQuestions = await api.getTopQuestions(1);
-            const lowPerforming = await api.getLowPerformingQuestions();
-            
-            const total = topQuestions.length + lowPerforming.length;
+            const total = Array.isArray(topQuestions) ? topQuestions.length : 0;
             document.getElementById('fbTotal').textContent = total;
             
-            // Calculate average from top questions
-            if (topQuestions.length > 0) {
+            if (topQuestions && topQuestions.length > 0) {
                 const avg = topQuestions.reduce((sum, q) => sum + (q.avg_feedback_score || 0), 0) / topQuestions.length;
                 document.getElementById('fbAvg').textContent = avg.toFixed(1);
             } else {
                 document.getElementById('fbAvg').textContent = '0';
             }
             
-            document.getElementById('fbHelpful').textContent = '75%'; // Placeholder
+            document.getElementById('fbHelpful').textContent = '75%';
         } catch (error) {
             console.error('Error loading feedback stats:', error);
+            document.getElementById('fbTotal').textContent = '0';
+            document.getElementById('fbAvg').textContent = '0';
         }
     },
 
     async loadFeedback() {
         const container = document.getElementById('feedbackList');
-        container.innerHTML = '<p class="loading-text">Loading feedback...</p>';
+        container.innerHTML = '<p class="loading-text">Chargement des feedbacks...</p>';
         
         try {
             const filter = document.getElementById('feedbackFilter').value;
-            // Get top questions with their feedback
             const questions = await api.getTopQuestions(20);
             
-            if (questions.length === 0) {
-                container.innerHTML = '<p class="loading-text">No feedback yet</p>';
+            if (!questions || !Array.isArray(questions) || questions.length === 0) {
+                container.innerHTML = '<p class="loading-text">Aucun feedback pour le moment</p>';
                 return;
             }
             
-            // Filter based on score
             let filtered = questions;
             if (filter === 'high') {
                 filtered = questions.filter(q => (q.avg_feedback_score || 0) >= 4);
@@ -64,14 +60,14 @@ const feedbackManager = {
             }
             
             if (filtered.length === 0) {
-                container.innerHTML = '<p class="loading-text">No feedback matching filter</p>';
+                container.innerHTML = '<p class="loading-text">Aucun feedback correspondant au filtre</p>';
                 return;
             }
             
             container.innerHTML = filtered.map(q => {
                 const score = q.avg_feedback_score || 0;
                 const scoreClass = score >= 4 ? 'score-high' : (score >= 2 ? 'score-medium' : 'score-low');
-                const scoreLabel = score >= 4 ? '👍 Good' : (score >= 2 ? '👌 OK' : '👎 Needs improvement');
+                const scoreLabel = score >= 4 ? '👍 Bon' : (score >= 2 ? '👌 OK' : '👎 À améliorer');
                 
                 return `
                     <div class="feedback-item">
@@ -79,10 +75,10 @@ const feedbackManager = {
                         <div>
                             <span class="feedback-score ${scoreClass}">${scoreLabel} (${score.toFixed(1)})</span>
                             <span style="margin-left: 12px; font-size: 0.8rem; color: #666;">
-                                Asked ${q.frequency || 0} times
+                                Posée ${q.frequency || 0} fois
                             </span>
                             <span style="margin-left: 12px; font-size: 0.8rem; color: #666;">
-                                Last: ${q.last_asked ? new Date(q.last_asked).toLocaleDateString() : 'N/A'}
+                                Dernière: ${q.last_asked ? new Date(q.last_asked).toLocaleDateString() : 'N/A'}
                             </span>
                         </div>
                     </div>
@@ -90,19 +86,20 @@ const feedbackManager = {
             }).join('');
             
         } catch (error) {
-            container.innerHTML = `<p class="loading-text">Error loading feedback: ${error.message}</p>`;
+            console.error('Error loading feedback:', error);
+            container.innerHTML = `<p class="loading-text">Erreur de chargement: ${error.message}</p>`;
         }
     },
 
     async loadTopQuestions() {
         const container = document.getElementById('topQuestionsList');
-        container.innerHTML = '<p style="color: #999; font-size: 0.9rem;">Loading...</p>';
+        container.innerHTML = '<p style="color: #999; font-size: 0.9rem;">Chargement...</p>';
         
         try {
             const questions = await api.getTopQuestions(5);
             
-            if (questions.length === 0) {
-                container.innerHTML = '<p style="color: #999; font-size: 0.9rem;">No questions yet</p>';
+            if (!questions || !Array.isArray(questions) || questions.length === 0) {
+                container.innerHTML = '<p style="color: #999; font-size: 0.9rem;">Aucune question pour le moment</p>';
                 return;
             }
             
@@ -119,19 +116,25 @@ const feedbackManager = {
             `).join('');
             
         } catch (error) {
-            container.innerHTML = `<p style="color: #999; font-size: 0.9rem;">Error: ${error.message}</p>`;
+            console.error('Error loading top questions:', error);
+            container.innerHTML = `<p style="color: #999; font-size: 0.9rem;">Erreur: ${error.message}</p>`;
         }
     },
 
     async loadLowPerforming() {
         const container = document.getElementById('lowPerformingList');
-        container.innerHTML = '<p style="color: #999; font-size: 0.9rem;">Loading...</p>';
+        container.innerHTML = '<p style="color: #999; font-size: 0.9rem;">Chargement...</p>';
         
         try {
-            const questions = await api.getLowPerformingQuestions(2, 3.0, 30);
+            const result = await api.getLowPerformingQuestions(2, 3.0, 30);
+            
+            // CORRECTION: Vérifier que result a une propriété 'questions' qui est un tableau
+            const questions = (result && result.questions && Array.isArray(result.questions)) 
+                ? result.questions 
+                : [];
             
             if (questions.length === 0) {
-                container.innerHTML = '<p style="color: #999; font-size: 0.9rem;">No low performing questions</p>';
+                container.innerHTML = '<p style="color: #999; font-size: 0.9rem;">Aucune question à améliorer</p>';
                 return;
             }
             
@@ -146,7 +149,8 @@ const feedbackManager = {
             `).join('');
             
         } catch (error) {
-            container.innerHTML = `<p style="color: #999; font-size: 0.9rem;">Error: ${error.message}</p>`;
+            console.error('Error loading low performing questions:', error);
+            container.innerHTML = `<p style="color: #999; font-size: 0.9rem;">Erreur: ${error.message}</p>`;
         }
     }
 };
@@ -154,4 +158,5 @@ const feedbackManager = {
 // Initialize feedback manager when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     feedbackManager.init();
+    window.feedbackManager = feedbackManager;
 });
