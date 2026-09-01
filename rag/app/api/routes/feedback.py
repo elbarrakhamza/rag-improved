@@ -2,7 +2,7 @@ from fastapi import APIRouter, Request, Depends, HTTPException
 from pydantic import BaseModel, Field
 from asyncpg import Connection
 from loguru import logger
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from app.core.security import get_api_key
 from app.api.dependices import get_connection
 from app.service.retriever import update_feedback_score
@@ -17,13 +17,9 @@ class FeedbackRequest(BaseModel):
     answer: Optional[str] = Field(None, max_length=5000)
     document_id: Optional[int] = None
     chunk_id: Optional[int] = None
-    score: int = Field(ge=1, le=5, description="Score de 1 (très mauvais) à 5 (très bon)")
+    score: int = Field(ge=1, le=5)
     comment: Optional[str] = Field(None, max_length=1000)
     is_helpful: Optional[bool] = None
-
-
-class FeedbackStatsRequest(BaseModel):
-    question: str = Field(min_length=5, max_length=500)
 
 
 @router.post("/submit")
@@ -34,16 +30,12 @@ async def submit_feedback(
     db_connection: Connection = Depends(get_connection),
     key_info: dict = Depends(get_api_key)
 ):
-    """
-    Soumettre un feedback sur une réponse
-    """
+    """Soumettre un feedback sur une réponse"""
     try:
         logger.info(f"Feedback reçu pour: {feedback.question[:50]}...")
         
-        # Récupérer l'ID de la clé API
         api_key_id = key_info.get("api_key_id")
         
-        # Insérer le feedback
         result = await db_connection.fetchrow(
             """
             INSERT INTO feedback (
@@ -66,11 +58,9 @@ async def submit_feedback(
         
         feedback_id = result["id"]
         
-        # Mettre à jour le score du document si un document_id est fourni
         if feedback.document_id:
             await update_feedback_score(db_connection, feedback.document_id, feedback.score)
         
-        # Mettre à jour les patterns de questions
         await feedback_analyzer.record_question_pattern(
             db_connection,
             feedback.question,
@@ -98,9 +88,7 @@ async def get_question_stats(
     db_connection: Connection = Depends(get_connection),
     key_info: dict = Depends(get_api_key)
 ):
-    """
-    Statistiques pour une question spécifique
-    """
+    """Statistiques pour une question spécifique"""
     if key_info.get("role") not in ["admin", "employee"]:
         raise HTTPException(
             status_code=403,
@@ -109,7 +97,6 @@ async def get_question_stats(
     
     stats = await feedback_analyzer.get_question_feedback_summary(db_connection, question)
     
-    # Récupérer les feedbacks récents
     rows = await db_connection.fetch(
         """
         SELECT 
@@ -145,30 +132,44 @@ async def get_top_questions(
     """
     Récupère les questions les plus posées
     """
-    if key_info.get("role") not in ["admin", "employee"]:
-        raise HTTPException(
-            status_code=403,
-            detail="Only admin and employees can view top questions"
+    try:
+        # Vérifier si la table existe
+        table_exists = await db_connection.fetchval("""
+            SELECT EXISTS (
+                SELECT 1 
+                FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'question_patterns'
+            )
+        """)
+        
+        if not table_exists:
+            logger.warning("Table question_patterns n'existe pas")
+            return []
+        
+        # CORRECTION: Utiliser une syntaxe PostgreSQL correcte pour INTERVAL
+        rows = await db_connection.fetch(
+            """
+            SELECT 
+                question_hash,
+                question_text,
+                frequency,
+                avg_feedback_score,
+                last_asked
+            FROM question_patterns
+            WHERE last_asked >= NOW() - ($1 || ' days')::INTERVAL
+            ORDER BY frequency DESC
+            LIMIT $2
+            """,
+            days_back,
+            limit
         )
-    
-    rows = await db_connection.fetch(
-        """
-        SELECT 
-            question_hash,
-            question_text,
-            frequency,
-            avg_feedback_score,
-            last_asked
-        FROM question_patterns
-        WHERE last_asked >= NOW() - INTERVAL '$1 days' * INTERVAL '1 day'
-        ORDER BY frequency DESC
-        LIMIT $2
-        """,
-        days_back,
-        limit
-    )
-    
-    return [dict(row) for row in rows]
+        
+        return [dict(row) for row in rows]
+        
+    except Exception as e:
+        logger.error(f"Erreur get_top_questions: {e}")
+        return []
 
 
 @router.get("/low-performing-questions")
@@ -190,19 +191,36 @@ async def get_low_performing_questions(
             detail="Only admin can view low performing questions"
         )
     
-    questions = await feedback_analyzer.get_low_performance_questions(
-        db_connection,
-        min_frequency=min_frequency,
-        max_avg_score=max_avg_score,
-        days_back=days_back
-    )
-    
-    return {
-        "questions": questions,
-        "count": len(questions),
-        "filters": {
-            "min_frequency": min_frequency,
-            "max_avg_score": max_avg_score,
-            "days_back": days_back
+    try:
+        table_exists = await db_connection.fetchval("""
+            SELECT EXISTS (
+                SELECT 1 
+                FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'question_patterns'
+            )
+        """)
+        
+        if not table_exists:
+            return {"questions": [], "count": 0, "filters": {}}
+        
+        questions = await feedback_analyzer.get_low_performance_questions(
+            db_connection,
+            min_frequency=min_frequency,
+            max_avg_score=max_avg_score,
+            days_back=days_back
+        )
+        
+        return {
+            "questions": questions,
+            "count": len(questions),
+            "filters": {
+                "min_frequency": min_frequency,
+                "max_avg_score": max_avg_score,
+                "days_back": days_back
+            }
         }
-    }
+        
+    except Exception as e:
+        logger.error(f"Erreur get_low_performing_questions: {e}")
+        return {"questions": [], "count": 0, "filters": {}}
