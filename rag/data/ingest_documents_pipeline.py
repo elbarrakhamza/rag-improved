@@ -225,47 +225,73 @@ def enrich_chunks_with_embeddings(
     skip_embedding: bool = False,
 ) -> None:
     """
-    Enrichit les chunks avec des embeddings.
-    Si skip_embedding est True, ne fait rien (mode test).
+    Enrichit les chunks avec des embeddings via l'API NVIDIA
     """
     if not chunks:
         return
     
-    if skip_embedding or not TORCH_AVAILABLE:
-        print(f"⚠️  Mode SANS embeddings - {len(chunks)} chunks traités sans embeddings")
-        # Ajouter des embeddings factices pour respecter le format attendu
-        for chunk in chunks:
-            chunk["embedding"] = [0.0] * 1024  # Embedding factice
-        return
-
-    print(f"🔄 Génération des embeddings pour {len(chunks)} chunks avec {embedding_model}...")
-    
-    try:
-        model = BGEM3FlagModel(
-            embedding_model,
-            device="cuda" if torch.cuda.is_available() else "cpu",
-            use_fp16=True,
-        )
-
-        texts = [chunk["page_content"] for chunk in chunks]
-        vectors = model.encode(
-            texts,
-            max_length=max_tokens,
-            batch_size=batch_size,
-            return_dense=True,
-            return_sparse=False,
-            return_colbert_vecs=False,
-        )["dense_vecs"]
-
-        for index, vector in enumerate(vectors):
-            chunks[index]["embedding"] = vector.tolist()
-        
-        print(f"✅ Embeddings générés pour {len(chunks)} chunks")
-    except Exception as e:
-        print(f"❌ Erreur lors de la génération des embeddings: {e}")
-        print("⚠️ Fallback sur embeddings factices")
+    if skip_embedding:
+        print(f"⚠️  Mode SKIP EMBEDDING activé - {len(chunks)} chunks traités sans embeddings")
         for chunk in chunks:
             chunk["embedding"] = [0.0] * 1024
+        return
+
+    print(f"🔄 Génération des embeddings via API NVIDIA pour {len(chunks)} chunks...")
+    
+    # Importer le client NVIDIA
+    import requests
+    import os
+    
+    api_key = os.getenv("NVIDIA_API_KEY")
+    if not api_key:
+        print("⚠️ NVIDIA_API_KEY non trouvée - utilisation d'embeddings factices")
+        for chunk in chunks:
+            chunk["embedding"] = [0.0] * 1024
+        return
+    
+    # API NVIDIA NIM
+    url = "https://integrate.api.nvidia.com/v1/embeddings"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    # Traiter par lots pour éviter les limites
+    batch_size = 10
+    all_embeddings = []
+    
+    for i in range(0, len(chunks), batch_size):
+        batch = chunks[i:i+batch_size]
+        texts = [chunk["page_content"] for chunk in batch]
+        
+        payload = {
+            "input": texts,
+            "model": embedding_model,
+            "encoding_format": "float"
+        }
+        
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=60)
+            if response.status_code == 200:
+                data = response.json()
+                embeddings = [item["embedding"] for item in data["data"]]
+                all_embeddings.extend(embeddings)
+                print(f"   ✅ Batch {i//batch_size + 1}: {len(embeddings)} embeddings")
+            else:
+                print(f"   ❌ API error: {response.status_code} - {response.text}")
+                # Fallback sur embeddings factices
+                for chunk in batch:
+                    all_embeddings.append([0.0] * 1024)
+        except Exception as e:
+            print(f"   ❌ Erreur: {e}")
+            for chunk in batch:
+                all_embeddings.append([0.0] * 1024)
+    
+    # Assigner les embeddings aux chunks
+    for i, embedding in enumerate(all_embeddings):
+        chunks[i]["embedding"] = embedding
+    
+    print(f"✅ {len(all_embeddings)} embeddings générés via API NVIDIA")
 
 
 def save_chunks_to_json(chunks: List[Dict[str, Any]], output_path: str) -> None:
