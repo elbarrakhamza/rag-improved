@@ -41,7 +41,6 @@ async def query(
     sources = []
     
     try:
-        # Remplacer async with asyncio.timeout(15) par asyncio.wait_for
         async def _process():
             nonlocal response, sources
             question = query_request.question
@@ -51,22 +50,22 @@ async def query(
             
             logger.info(f"Question reçue de {role}: {question[:100]}...")
             
-            # 1. Vérifier le cache pour la réponse complète
+            # 1. Vérifier le cache pour la réponse complète (AVEC le rôle)
             cached_answer = None
             if use_cache:
-                cached_answer = embedding_cache.get_answer(question)
+                cached_answer = embedding_cache.get_answer(question, role=role)
             
             if cached_answer:
-                logger.info(f"Réponse en cache pour: {question[:50]}...")
+                logger.info(f"Réponse en cache pour: {question[:50]}... (rôle={role})")
                 await feedback_analyzer.record_question_pattern(db_connection, question)
                 return {
                     "answer": cached_answer["answer"],
                     "token_usage": cached_answer["token_usage"],
-                    "sources": [],
+                    "sources": [],  # Sources vidées pour le cache
                     "cached": True
                 }
             
-            # 2. Embedding (avec cache)
+            # 2. Embedding (avec cache - partagé entre tous les rôles, c'est OK)
             embedded_question = embedder.embed(question, use_cache=use_cache)
             embedded_question_str = str(embedded_question)
             
@@ -98,24 +97,35 @@ async def query(
             )
             response = await generate(prompt)
             
-            # 5. Mettre en cache la réponse
+            # 5. Mettre en cache la réponse AVEC le rôle
             if use_cache:
-                embedding_cache.set_answer(question, response[0], response[1])
+                # Pour les sources, on ne les garde pas en cache (sécurité)
+                embedding_cache.set_answer(
+                    question, 
+                    response[0], 
+                    response[1],
+                    role=role,
+                    sources=[]  # Pas de sources en cache
+                )
             
             # 6. Enregistrer la question pour analyse
             await feedback_analyzer.record_question_pattern(db_connection, question)
             
-            # 7. Préparer les sources
-            for chunk in retrieved_chunks:
-                metadata = chunk.get("metadata", {})
-                sources.append({
-                    "page": str(metadata.get("page_number", "N/A")),
-                    "source_file": metadata.get("source_file", "N/A"),
-                    "content": chunk.get("content", "")[:200] + "...",
-                    "similarity": chunk.get("similarity", 0),
-                    "feedback_score": chunk.get("feedback_score", 0),
-                    "feedback_count": chunk.get("feedback_count", 0)
-                })
+            # 7. Préparer les sources (uniquement si le rôle le permet)
+            if role in ["admin", "employee"]:
+                for chunk in retrieved_chunks:
+                    metadata = chunk.get("metadata", {})
+                    sources.append({
+                        "page": str(metadata.get("page_number", "N/A")),
+                        "source_file": metadata.get("source_file", "N/A"),
+                        "content": chunk.get("content", "")[:200] + "...",
+                        "similarity": chunk.get("similarity", 0),
+                        "feedback_score": chunk.get("feedback_score", 0),
+                        "feedback_count": chunk.get("feedback_count", 0)
+                    })
+            else:
+                # Public: pas de sources
+                sources = []
             
             return {
                 "answer": response[0] if response else "Erreur: pas de réponse générée",
@@ -124,8 +134,7 @@ async def query(
                 "cached": False
             }
         
-        # Exécuter avec timeout via asyncio.wait_for
-        result = await asyncio.wait_for(_process(), timeout=15)
+        result = await asyncio.wait_for(_process(), timeout=15.0)
         return result
 
     except asyncio.TimeoutError:

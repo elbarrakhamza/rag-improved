@@ -7,7 +7,7 @@ from loguru import logger
 
 
 class EmbeddingCache:
-    """Cache pour les embeddings des questions fréquentes"""
+    """Cache pour les embeddings et les réponses des questions fréquentes"""
     
     def __init__(self):
         self._client = None
@@ -33,8 +33,10 @@ class EmbeddingCache:
     def _get_embedding_key(self, question: str) -> str:
         return f"embed:{hashlib.md5(question.encode('utf-8')).hexdigest()}"
     
-    def _get_answer_key(self, question: str) -> str:
-        return f"answer:{hashlib.md5(question.encode('utf-8')).hexdigest()}"
+    def _get_answer_key(self, question: str, role: str = "public") -> str:
+        """Clé de cache avec le rôle pour isoler les réponses par permission"""
+        # Ajouter le rôle dans la clé pour éviter le partage entre admin et public
+        return f"answer:{hashlib.md5(question.encode('utf-8')).hexdigest()}:{role}"
     
     def get_embedding(self, question: str) -> Optional[list]:
         if not self._enabled or not self._client:
@@ -66,37 +68,41 @@ class EmbeddingCache:
             logger.warning(f"Erreur d'écriture du cache: {e}")
             return False
     
-    def get_answer(self, question: str) -> Optional[dict]:
-        """Récupère une réponse en cache"""
+    def get_answer(self, question: str, role: str = "public") -> Optional[dict]:
+        """Récupère une réponse en cache avec le rôle spécifique"""
         if not self._enabled or not self._client:
             return None
         
         try:
-            key = self._get_answer_key(question)
+            key = self._get_answer_key(question, role)
             cached = self._client.get(key)
             if cached:
-                logger.debug(f"Cache hit pour la réponse: {question[:50]}...")
-                return json.loads(cached)
+                data = json.loads(cached)
+                data["cached"] = True
+                logger.debug(f"Cache hit pour la réponse (rôle={role}): {question[:50]}...")
+                return data
         except Exception as e:
             logger.warning(f"Erreur de lecture du cache réponse: {e}")
         return None
     
-    def set_answer(self, question: str, answer: str, token_usage: int) -> bool:
-        """Cache une réponse"""
+    def set_answer(self, question: str, answer: str, token_usage: int, role: str = "public", sources: list = None) -> bool:
+        """Cache une réponse avec le rôle spécifique"""
         if not self._enabled or not self._client:
             return False
         
         try:
-            key = self._get_answer_key(question)
+            key = self._get_answer_key(question, role)
             data = {
                 "answer": answer,
-                "token_usage": token_usage
+                "token_usage": token_usage,
+                "sources": sources or []
             }
             self._client.setex(
                 key,
                 settings.cache_ttl_seconds,
                 json.dumps(data)
             )
+            logger.debug(f"Réponse mise en cache (rôle={role}): {question[:50]}...")
             return True
         except Exception as e:
             logger.warning(f"Erreur d'écriture du cache réponse: {e}")
