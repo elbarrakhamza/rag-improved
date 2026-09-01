@@ -1,8 +1,9 @@
 import asyncio
 import uuid
 import json
+import shutil
 from typing import List, Dict, Any
-from pathlib import Path
+from pathlib import Path  # ← AJOUTER CET IMPORT
 from loguru import logger
 from app.core.config import settings
 
@@ -17,8 +18,7 @@ from ingest_documents_pipeline import (
 )
 from write_embeddings_to_postgres import get_postgres_connection, insert_chunks_with_embeddings
 
-# Stockage des tâches en mémoire (pour le prototype)
-# En production, utiliser Redis ou une base de données
+# Stockage des tâches en mémoire
 tasks = {}
 
 
@@ -59,7 +59,6 @@ async def run_ingestion(task_id: str, files: List[str], metadata: Dict[str, Any]
             
             # Créer un job temporaire pour build_chunks
             from ingest_documents_pipeline import IngestionJob
-            from pathlib import Path
             
             job = IngestionJob(
                 path=Path(file_path),
@@ -129,7 +128,6 @@ async def run_ingestion(task_id: str, files: List[str], metadata: Dict[str, Any]
             tasks[task_id]["chunks_inserted"] = 0
         
         # Nettoyer le répertoire temporaire
-        import shutil
         shutil.rmtree(temp_dir, ignore_errors=True)
         
         tasks[task_id]["status"] = "completed"
