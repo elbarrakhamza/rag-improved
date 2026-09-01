@@ -15,14 +15,15 @@ async def retrive(
     """
     Recherche les chunks pertinents avec filtrage par rôle
     - Public: voit seulement les documents publics
-    - Admin/Employee: voit TOUS les documents (publics + privés)
+    - Admin/Employee: voit TOUS les documents (publics + privés) sans priorité
     """
     top_k = top_k if top_k is not None else settings.top_k
     
-    # Pour admin/employee: voir tous les documents, mais prioriser les privés
+    # Pour admin/employee: voir TOUS les documents (publics + privés)
     if role != "public":
-        # 1. Récupérer les documents privés (priorité)
-        query_private = f"""
+        logger.info(f"🔍 Admin/Employee: recherche dans TOUS les documents")
+        
+        query = f"""
             SELECT  
                 content,
                 metadata,
@@ -31,132 +32,12 @@ async def retrive(
                 feedback_count
             FROM documents
             WHERE 1 - (embedding <=> $1::vector) >= $2
-            AND (metadata->>'visibility' = 'private')
-            ORDER BY similarity DESC
-            LIMIT $3
-        """
-        
-        private_rows = await db_con.fetch(
-            query_private,
-            embedding,
-            settings.min_similarity,
-            top_k
-        )
-        
-        results = []
-        for row in private_rows:
-            results.append({
-                "content": row["content"],
-                "metadata": json.loads(row["metadata"]),
-                "similarity": float(row["similarity"]),
-                "feedback_score": float(row.get("feedback_score") or 0),
-                "feedback_count": int(row.get("feedback_count") or 0)
-            })
-        
-        logger.info(f"🔍 {len(results)} résultats privés trouvés")
-        
-        # 2. Si pas assez de résultats privés, chercher dans les documents publics
-        if len(results) < top_k:
-            remaining = top_k - len(results)
-            logger.info(f"🔍 Recherche de {remaining} documents publics supplémentaires...")
-            
-            query_public = f"""
-                SELECT  
-                    content,
-                    metadata,
-                    1 - (embedding <=> $1::vector) AS similarity,
-                    feedback_score,
-                    feedback_count
-                FROM documents
-                WHERE 1 - (embedding <=> $1::vector) >= $2
-                AND (metadata->>'visibility' = 'public' OR metadata->>'visibility' IS NULL)
-                ORDER BY similarity DESC
-                LIMIT $3
-            """
-            
-            public_rows = await db_con.fetch(
-                query_public,
-                embedding,
-                settings.min_similarity,
-                remaining
-            )
-            
-            for row in public_rows:
-                results.append({
-                    "content": row["content"],
-                    "metadata": json.loads(row["metadata"]),
-                    "similarity": float(row["similarity"]),
-                    "feedback_score": float(row.get("feedback_score") or 0),
-                    "feedback_count": int(row.get("feedback_count") or 0)
-                })
-            
-            logger.info(f"🔍 {len(public_rows)} résultats publics ajoutés")
-        
-        # 3. Si toujours pas assez, chercher dans tous les documents (sans filtre)
-        if len(results) < top_k:
-            remaining = top_k - len(results)
-            logger.info(f"🔍 Recherche de {remaining} documents supplémentaires (sans filtre)...")
-            
-            query_all = f"""
-                SELECT  
-                    content,
-                    metadata,
-                    1 - (embedding <=> $1::vector) AS similarity,
-                    feedback_score,
-                    feedback_count
-                FROM documents
-                WHERE 1 - (embedding <=> $1::vector) >= $2
-                ORDER BY similarity DESC
-                LIMIT $3
-            """
-            
-            all_rows = await db_con.fetch(
-                query_all,
-                embedding,
-                settings.min_similarity,
-                remaining
-            )
-            
-            # Éviter les doublons
-            existing_content = {r["content"] for r in results}
-            for row in all_rows:
-                row_dict = {
-                    "content": row["content"],
-                    "metadata": json.loads(row["metadata"]),
-                    "similarity": float(row["similarity"]),
-                    "feedback_score": float(row.get("feedback_score") or 0),
-                    "feedback_count": int(row.get("feedback_count") or 0)
-                }
-                if row_dict["content"] not in existing_content:
-                    results.append(row_dict)
-                    existing_content.add(row_dict["content"])
-            
-            logger.info(f"🔍 {len(all_rows)} résultats supplémentaires ajoutés")
-        
-        # Trier par similarité décroissante
-        results.sort(key=lambda x: x["similarity"], reverse=True)
-        results = results[:top_k]
-        
-        logger.info(f"✅ {len(results)} résultats totaux pour admin/employee")
-        
-    else:
-        # Pour public: voir seulement les documents publics
-        query_public = f"""
-            SELECT  
-                content,
-                metadata,
-                1 - (embedding <=> $1::vector) AS similarity,
-                feedback_score,
-                feedback_count
-            FROM documents
-            WHERE 1 - (embedding <=> $1::vector) >= $2
-            AND (metadata->>'visibility' = 'public' OR metadata->>'visibility' IS NULL)
             ORDER BY similarity DESC
             LIMIT $3
         """
         
         rows = await db_con.fetch(
-            query_public,
+            query,
             embedding,
             settings.min_similarity,
             top_k
@@ -172,12 +53,48 @@ async def retrive(
                 "feedback_count": int(row.get("feedback_count") or 0)
             })
         
-        logger.info(f"🔍 {len(results)} résultats publics trouvés")
-    
-    # Log des visibilités trouvées
-    if len(results) > 0:
-        visibilities = [r["metadata"].get("visibility", "public") for r in results]
-        logger.info(f"   Visibilités trouvées: {set(visibilities)}")
+        if len(results) > 0:
+            visibilities = [r["metadata"].get("visibility", "public") for r in results]
+            logger.info(f"   Visibilités trouvées: {set(visibilities)}")
+        
+        logger.info(f"✅ {len(results)} résultats trouvés pour admin/employee")
+        
+    else:
+        # Pour public: voir seulement les documents publics
+        logger.info(f"🔍 Public: recherche dans les documents publics uniquement")
+        
+        query = f"""
+            SELECT  
+                content,
+                metadata,
+                1 - (embedding <=> $1::vector) AS similarity,
+                feedback_score,
+                feedback_count
+            FROM documents
+            WHERE 1 - (embedding <=> $1::vector) >= $2
+            AND (metadata->>'visibility' = 'public' OR metadata->>'visibility' IS NULL)
+            ORDER BY similarity DESC
+            LIMIT $3
+        """
+        
+        rows = await db_con.fetch(
+            query,
+            embedding,
+            settings.min_similarity,
+            top_k
+        )
+        
+        results = []
+        for row in rows:
+            results.append({
+                "content": row["content"],
+                "metadata": json.loads(row["metadata"]),
+                "similarity": float(row["similarity"]),
+                "feedback_score": float(row.get("feedback_score") or 0),
+                "feedback_count": int(row.get("feedback_count") or 0)
+            })
+        
+        logger.info(f"✅ {len(results)} résultats publics trouvés")
     
     return results
 
