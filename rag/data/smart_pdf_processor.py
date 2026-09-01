@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-smart_pdf_processor.py - Version adaptée pour le pipeline RAG
-Extraction intelligente des PDF avec OCR, tableaux et images
+smart_pdf_processor.py - Version SANS camelot (donc SANS Torch)
+Extraction PDF avec OCR (Tesseract) et pdfplumber uniquement
 """
 
 import os
@@ -12,19 +12,22 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 import re as _re
 
-import fitz
+import fitz  # PyMuPDF
 import pdfplumber
 import pytesseract
 from PIL import Image
 import requests
 import base64
 
-try:
-    import camelot
-    CAMELOT_AVAILABLE = True
-except ImportError:
-    CAMELOT_AVAILABLE = False
+# Supprimer l'import de camelot - IL N'EST PLUS NÉCESSAIRE
+# try:
+#     import camelot
+#     CAMELOT_AVAILABLE = True
+# except ImportError:
+#     CAMELOT_AVAILABLE = False
+CAMELOT_AVAILABLE = False  # Forcer à False
 
+# Garder les autres imports
 try:
     from spellchecker import SpellChecker
     _SPELL_FR = SpellChecker(language="fr")
@@ -39,7 +42,10 @@ logging.basicConfig(
 )
 log = logging.getLogger("smart_pdf")
 
-# Configuration
+# --------------------------------------------------------------------------
+# CONFIG
+# --------------------------------------------------------------------------
+
 MIN_CHARS_FOR_TEXT_PAGE = 40
 OCR_RENDER_DPI = 300
 MIN_IMAGE_SIZE_PX = 80
@@ -178,6 +184,7 @@ def ocr_page(page: fitz.Page, lang: str = "fra+ara") -> str:
 
 
 def extract_tables_pdfplumber(pdf_path: str, page_number: int) -> list:
+    """Extraction de tableaux UNIQUEMENT via pdfplumber (pas de camelot)"""
     tables_md = []
     try:
         with pdfplumber.open(pdf_path) as pdf:
@@ -188,19 +195,6 @@ def extract_tables_pdfplumber(pdf_path: str, page_number: int) -> list:
                     tables_md.append(table_to_markdown(t))
     except Exception as e:
         log.debug(f"pdfplumber a échoué page {page_number + 1}: {e}")
-    return tables_md
-
-
-def extract_tables_camelot(pdf_path: str, page_number: int) -> list:
-    tables_md = []
-    try:
-        tables = camelot.read_pdf(pdf_path, pages=str(page_number + 1), flavor="lattice")
-        if tables.n == 0:
-            tables = camelot.read_pdf(pdf_path, pages=str(page_number + 1), flavor="stream")
-        for t in tables:
-            tables_md.append(t.df.to_markdown(index=False))
-    except Exception as e:
-        log.debug(f"camelot a échoué page {page_number + 1}: {e}")
     return tables_md
 
 
@@ -225,26 +219,52 @@ def is_likely_fake_table(table_md: str) -> bool:
     return len(header_cols) < 2
 
 
-def process_pdf_smart(pdf_path: str, ocr_lang: str = "fra+ara", 
-                      use_vision_llm: bool = True, 
-                      output_dir: str = None) -> List[Dict[str, Any]]:
+def extract_images(doc: fitz.Document, page: fitz.Page, output_dir: str, 
+                   doc_name: str, use_vision_llm: bool) -> list:
+    extracted = []
+    image_list = page.get_images(full=True)
+    
+    for idx, img in enumerate(image_list):
+        xref = img[0]
+        try:
+            base_image = doc.extract_image(xref)
+        except Exception:
+            continue
+        
+        width, height = base_image.get("width", 0), base_image.get("height", 0)
+        if width < MIN_IMAGE_SIZE_PX or height < MIN_IMAGE_SIZE_PX:
+            continue
+        
+        ext = base_image["ext"]
+        img_filename = f"{doc_name}_p{page.number + 1}_img{idx + 1}.{ext}"
+        img_path = os.path.join(output_dir or "/tmp", "images", img_filename)
+        os.makedirs(os.path.dirname(img_path), exist_ok=True)
+        
+        with open(img_path, "wb") as f:
+            f.write(base_image["image"])
+        
+        description = describe_image_with_vision_llm(img_path, use_vision_llm)
+        extracted.append({"path": img_path, "description": description})
+    
+    return extracted
+
+
+def process_pdf_smart(
+    pdf_path: str,
+    ocr_lang: str = "fra+ara",
+    use_vision_llm: bool = True,
+    output_dir: str = None
+) -> List[Dict[str, Any]]:
     """
     Traite un PDF intelligemment et retourne les chunks pour le RAG
-    
-    Args:
-        pdf_path: Chemin du PDF
-        ocr_lang: Langues pour l'OCR
-        use_vision_llm: Activer la description des images
-        output_dir: Dossier de sortie pour les images (optionnel)
-    
-    Returns:
-        Liste de chunks avec métadonnées
+    - SANS camelot (donc SANS Torch)
+    - Utilise pdfplumber pour les tableaux
+    - Utilise Tesseract pour l'OCR
     """
     doc_name = Path(pdf_path).stem
     doc = fitz.open(pdf_path)
     
     all_chunks = []
-    current_page = 1
     
     for page_number in range(len(doc)):
         page = doc[page_number]
@@ -253,7 +273,6 @@ def process_pdf_smart(pdf_path: str, ocr_lang: str = "fra+ara",
             output_dir, doc_name, ocr_lang, use_vision_llm
         )
         
-        # Construire le contenu de la page
         content_parts = []
         
         if page_result.text:
@@ -287,7 +306,6 @@ def process_page(doc: fitz.Document, page: fitz.Page, pdf_path: str, page_number
                  output_dir: str, doc_name: str, ocr_lang: str, use_vision_llm: bool) -> PageResult:
     result = PageResult(page_number=page_number + 1, method_used="")
     
-    # 1) Détection scan / texte corrompu
     native_text = page.get_text("text").strip()
     needs_ocr = is_scanned_page(page)
     corrupted = False
@@ -296,7 +314,6 @@ def process_page(doc: fitz.Document, page: fitz.Page, pdf_path: str, page_number
         needs_ocr = True
         corrupted = True
     
-    # 2) OCR si nécessaire
     if needs_ocr:
         result.method_used = "ocr"
         if corrupted:
@@ -309,20 +326,16 @@ def process_page(doc: fitz.Document, page: fitz.Page, pdf_path: str, page_number
         result.method_used = "texte_natif"
         result.text = native_text
     
-    # 3) Extraction des tableaux (uniquement pour texte natif)
+    # Extraction des tableaux UNIQUEMENT via pdfplumber
     if result.method_used == "texte_natif":
         try:
-            raw_tables = []
-            if CAMELOT_AVAILABLE:
-                raw_tables = extract_tables_camelot(pdf_path, page_number)
-            if not raw_tables:
-                raw_tables = extract_tables_pdfplumber(pdf_path, page_number)
+            raw_tables = extract_tables_pdfplumber(pdf_path, page_number)
             raw_tables = [t for t in raw_tables if t.strip()]
             result.tables_markdown = [t for t in raw_tables if not is_likely_fake_table(t)]
         except Exception as e:
             result.warnings.append(f"Échec extraction tableaux: {e}")
     
-    # 4) Extraction des images
+    # Extraction des images
     try:
         result.images_extracted = extract_images(
             doc, page, output_dir, doc_name, use_vision_llm
@@ -331,33 +344,3 @@ def process_page(doc: fitz.Document, page: fitz.Page, pdf_path: str, page_number
         result.warnings.append(f"Échec extraction images: {e}")
     
     return result
-
-
-def extract_images(doc: fitz.Document, page: fitz.Page, output_dir: str, 
-                   doc_name: str, use_vision_llm: bool) -> list:
-    extracted = []
-    image_list = page.get_images(full=True)
-    
-    for idx, img in enumerate(image_list):
-        xref = img[0]
-        try:
-            base_image = doc.extract_image(xref)
-        except Exception:
-            continue
-        
-        width, height = base_image.get("width", 0), base_image.get("height", 0)
-        if width < MIN_IMAGE_SIZE_PX or height < MIN_IMAGE_SIZE_PX:
-            continue
-        
-        ext = base_image["ext"]
-        img_filename = f"{doc_name}_p{page.number + 1}_img{idx + 1}.{ext}"
-        img_path = os.path.join(output_dir or "/tmp", "images", img_filename)
-        os.makedirs(os.path.dirname(img_path), exist_ok=True)
-        
-        with open(img_path, "wb") as f:
-            f.write(base_image["image"])
-        
-        description = describe_image_with_vision_llm(img_path, use_vision_llm)
-        extracted.append({"path": img_path, "description": description})
-    
-    return extracted

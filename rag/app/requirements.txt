@@ -1,3 +1,4 @@
+# Core API
 fastapi==0.115.0
 uvicorn==0.30.0
 pydantic==2.7.0
@@ -12,10 +13,12 @@ redis==5.0.1
 requests
 python-multipart
 
-# Pour le Smart PDF Processing (optionnel)
-pymupdf
-pdfplumber
-camelot-py
-pytesseract
-pillow
-pyspellchecker
+# Smart PDF Processing (SANS Torch - version légère)
+pymupdf          # Extraction PDF
+pdfplumber       # Extraction des tableaux (alternative à camelot, sans torch)
+pytesseract      # OCR
+pillow           # Traitement d'images
+pyspellchecker   # Détection de texte corrompu (optionnel)
+
+# Note: camelot-py a été retiré car il nécessite torch
+# Les tableaux sont maintenant extraits via pdfplumber uniquement
