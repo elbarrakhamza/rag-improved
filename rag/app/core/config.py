@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     
     max_tokens: int = 512
     top_k: int = 7
-    min_similarity: float = 0.7
+    min_similarity: float = 0.3
     healthcheck_internet_url: str = "https://www.google.com/generate_204"
     healthcheck_timeout_seconds: float = 3.0
 
