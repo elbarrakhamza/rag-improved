@@ -13,12 +13,16 @@ redis==5.0.1
 requests
 python-multipart
 
+# Base de données (pour l'ingestion)
+psycopg2-binary  # ← AJOUTÉ
+
 # Smart PDF Processing (SANS Torch - version légère)
 pymupdf          # Extraction PDF
 pdfplumber       # Extraction des tableaux (alternative à camelot, sans torch)
 pytesseract      # OCR
 pillow           # Traitement d'images
 pyspellchecker   # Détection de texte corrompu (optionnel)
+langchain-text-splitters  # ← AJOUTÉ pour le découpage de textes
 
 # Note: camelot-py a été retiré car il nécessite torch
 # Les tableaux sont maintenant extraits via pdfplumber uniquement
