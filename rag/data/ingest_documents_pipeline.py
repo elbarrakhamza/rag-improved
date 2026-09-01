@@ -4,9 +4,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import fitz
-import torch
-from FlagEmbedding import BGEM3FlagModel
+# Vérification de la disponibilité de torch
+try:
+    import torch
+    from FlagEmbedding import BGEM3FlagModel
+    TORCH_AVAILABLE = True
+    print("✅ Torch disponible - embeddings locaux possibles")
+except ImportError:
+    TORCH_AVAILABLE = False
+    print("⚠️ Torch non disponible - utilisation du mode sans embeddings")
+    print("   Pour les embeddings, utilisez l'API NVIDIA configurée dans .env")
+    
 from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 
 from write_embeddings_to_postgres import (
@@ -15,7 +23,7 @@ from write_embeddings_to_postgres import (
     normalize_metadata,
 )
 
-# Import du smart PDF processor
+# Import du smart PDF processor (SANS torch)
 from smart_pdf_processor import process_pdf_smart
 
 SUPPORTED_EXTENSIONS = {".pdf", ".txt", ".md", ".markdown"}
@@ -223,34 +231,41 @@ def enrich_chunks_with_embeddings(
     if not chunks:
         return
     
-    if skip_embedding:
-        print(f"⚠️  Mode SKIP EMBEDDING activé - {len(chunks)} chunks traités sans embeddings")
+    if skip_embedding or not TORCH_AVAILABLE:
+        print(f"⚠️  Mode SANS embeddings - {len(chunks)} chunks traités sans embeddings")
         # Ajouter des embeddings factices pour respecter le format attendu
         for chunk in chunks:
             chunk["embedding"] = [0.0] * 1024  # Embedding factice
         return
 
-    print(f"🔄 Génération des embeddings pour {len(chunks)} chunks...")
-    model = BGEM3FlagModel(
-        embedding_model,
-        device="cuda" if torch.cuda.is_available() else "cpu",
-        use_fp16=True,
-    )
-
-    texts = [chunk["page_content"] for chunk in chunks]
-    vectors = model.encode(
-        texts,
-        max_length=max_tokens,
-        batch_size=batch_size,
-        return_dense=True,
-        return_sparse=False,
-        return_colbert_vecs=False,
-    )["dense_vecs"]
-
-    for index, vector in enumerate(vectors):
-        chunks[index]["embedding"] = vector.tolist()
+    print(f"🔄 Génération des embeddings pour {len(chunks)} chunks avec {embedding_model}...")
     
-    print(f"✅ Embeddings générés pour {len(chunks)} chunks")
+    try:
+        model = BGEM3FlagModel(
+            embedding_model,
+            device="cuda" if torch.cuda.is_available() else "cpu",
+            use_fp16=True,
+        )
+
+        texts = [chunk["page_content"] for chunk in chunks]
+        vectors = model.encode(
+            texts,
+            max_length=max_tokens,
+            batch_size=batch_size,
+            return_dense=True,
+            return_sparse=False,
+            return_colbert_vecs=False,
+        )["dense_vecs"]
+
+        for index, vector in enumerate(vectors):
+            chunks[index]["embedding"] = vector.tolist()
+        
+        print(f"✅ Embeddings générés pour {len(chunks)} chunks")
+    except Exception as e:
+        print(f"❌ Erreur lors de la génération des embeddings: {e}")
+        print("⚠️ Fallback sur embeddings factices")
+        for chunk in chunks:
+            chunk["embedding"] = [0.0] * 1024
 
 
 def save_chunks_to_json(chunks: List[Dict[str, Any]], output_path: str) -> None:
@@ -320,8 +335,8 @@ def print_chunk_summary(chunks: List[Dict[str, Any]], skip_embedding: bool = Fal
             print(f"Métadonnées: {json.dumps(chunks[0]['metadata'], indent=2, ensure_ascii=False)}")
             if "embedding" in chunks[0]:
                 emb = chunks[0]["embedding"]
-                if skip_embedding:
-                    print(f"Embedding: [FACTICE] taille={len(emb)} (mode test)")
+                if skip_embedding or not TORCH_AVAILABLE:
+                    print(f"Embedding: [FACTICE] taille={len(emb)} (mode sans torch)")
                 else:
                     print(f"Embedding: taille={len(emb)}, premiers éléments={emb[:5]}...")
     
@@ -387,6 +402,15 @@ def main() -> None:
         print("  - Aucune insertion en base de données")
         print("  - Les chunks seront sauvegardés en JSON si --output-json est fourni")
         print("⚠️" * 20 + "\n")
+    
+    if not TORCH_AVAILABLE and not args.skip_embedding:
+        print("\n" + "⚠️" * 20)
+        print("  TORCH NON DISPONIBLE")
+        print("  - Les embeddings ne peuvent pas être générés localement")
+        print("  - Utilisez --skip-embedding pour le mode test")
+        print("  - Ou installez torch: pip install torch FlagEmbedding")
+        print("⚠️" * 20 + "\n")
+        args.skip_embedding = True  # Forcer le mode skip
 
     base_metadata = {
         "brand": args.brand,
@@ -427,23 +451,13 @@ def main() -> None:
         save_chunks_to_json(chunks, args.output_json)
 
     # Générer les embeddings (sauf si skip)
-    if not args.skip_embedding:
-        enrich_chunks_with_embeddings(
-            chunks=chunks,
-            embedding_model=args.embedding_model,
-            max_tokens=args.max_tokens,
-            batch_size=args.batch_size,
-            skip_embedding=False,
-        )
-    else:
-        # Mode test: ajouter des embeddings factices
-        enrich_chunks_with_embeddings(
-            chunks=chunks,
-            embedding_model=args.embedding_model,
-            max_tokens=args.max_tokens,
-            batch_size=args.batch_size,
-            skip_embedding=True,
-        )
+    enrich_chunks_with_embeddings(
+        chunks=chunks,
+        embedding_model=args.embedding_model,
+        max_tokens=args.max_tokens,
+        batch_size=args.batch_size,
+        skip_embedding=args.skip_embedding,
+    )
 
     # Insertion en base de données (sauf si skip ou no-db-insert)
     if args.skip_embedding or args.no_db_insert:
