@@ -8,7 +8,45 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏗️</text></svg>">
 </head>
 <body>
-    <div class="app-container">
+    <!-- PAGE DE CONNEXION -->
+    <div id="loginPage" class="login-container">
+        <div class="login-box">
+            <div class="login-header">
+                <div class="login-icon">🏗️</div>
+                <h1>RAG Admin</h1>
+                <p>Système de maintenance d'ascenseurs</p>
+            </div>
+            
+            <form id="loginForm" class="login-form">
+                <div class="form-group">
+                    <label for="apiKeyInput">🔑 Clé API</label>
+                    <input type="password" id="apiKeyInput" placeholder="Entrez votre clé API" required>
+                    <span class="form-hint">Contactez l'administrateur pour obtenir votre clé</span>
+                </div>
+                
+                <div class="form-group">
+                    <label for="apiUrlInput">🌐 URL de l'API</label>
+                    <input type="url" id="apiUrlInput" placeholder="https://api-rag.stage.enset.top" value="https://api-rag.stage.enset.top">
+                    <span class="form-hint">URL de l'API RAG</span>
+                </div>
+                
+                <button type="submit" class="btn-login">🔓 Se connecter</button>
+                
+                <div id="loginError" class="login-error" style="display:none;">
+                    ❌ Clé API invalide. Veuillez réessayer.
+                </div>
+                
+                <div class="login-footer">
+                    <span>Version 2.0</span>
+                    <span>|</span>
+                    <span>🔒 Connexion sécurisée</span>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- APPLICATION PRINCIPALE (masquée tant que non connecté) -->
+    <div id="appContainer" class="app-container" style="display:none;">
         <!-- Sidebar -->
         <nav class="sidebar" id="sidebar">
             <div class="sidebar-header">
@@ -46,9 +84,9 @@
             <div class="sidebar-footer">
                 <div class="api-key-status">
                     <span class="dot green"></span>
-                    <span>Connected</span>
+                    <span>Connecté</span>
                 </div>
-                <button class="btn-logout" id="logoutBtn">🚪 Logout</button>
+                <button class="btn-logout" id="logoutBtn">🚪 Déconnexion</button>
             </div>
         </nav>
 
@@ -111,125 +149,114 @@
                         <div id="topQuestionsList" class="question-list"></div>
                     </div>
                     <div class="chart-card">
-                        <h3>Low Performing Questions</h3>
+                        <h3>Questions à améliorer</h3>
                         <div id="lowPerformingList" class="question-list"></div>
                     </div>
                 </div>
 
                 <div class="dashboard-tasks">
-                    <h3>Recent Tasks</h3>
+                    <h3>Tâches récentes</h3>
                     <div id="recentTasks" class="task-list"></div>
                 </div>
             </section>
 
             <!-- Upload Tab -->
-            <!-- Upload Tab -->
-<section id="tab-upload" class="tab-content">
-    <div class="upload-container">
-        <div class="upload-area" id="uploadArea">
-            <div class="upload-icon">📤</div>
-            <h3>Glissez-déposez vos fichiers ici</h3>
-            <p>ou</p>
-            <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
-                Parcourir les fichiers
-            </button>
-            <input type="file" id="fileInput" multiple accept=".pdf,.txt,.md,.markdown,.zip" style="display:none">
-            <div id="fileList" class="file-list"></div>
-        </div>
+            <section id="tab-upload" class="tab-content">
+                <div class="upload-container">
+                    <div class="upload-area" id="uploadArea">
+                        <div class="upload-icon">📤</div>
+                        <h3>Glissez-déposez vos fichiers ici</h3>
+                        <p>ou</p>
+                        <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+                            Parcourir les fichiers
+                        </button>
+                        <input type="file" id="fileInput" multiple accept=".pdf,.txt,.md,.markdown,.zip" style="display:none">
+                        <div id="fileList" class="file-list"></div>
+                    </div>
 
-        <div class="upload-metadata">
-            <h3>📋 Métadonnées</h3>
-            <p style="color: #666; font-size: 0.85rem; margin-bottom: 16px;">
-                Les métadonnées seront détectées automatiquement à partir du nom du fichier.
-                Vous pouvez les ajuster manuellement si nécessaire.
-            </p>
-            
-            <form id="metadataForm">
-                <div class="form-group">
-                    <label>🏷️ Marque</label>
-                    <input type="text" id="metaBrand" placeholder="Détectée automatiquement..." readonly style="background: #f5f5f5;">
-                    <span style="font-size: 0.7rem; color: #999; display: block; margin-top: 4px;">
-                        Détectée depuis le nom du fichier
-                    </span>
-                </div>
-                <div class="form-group">
-                    <label>📦 Modèle d'ascenseur</label>
-                    <input type="text" id="metaModel" placeholder="Détecté automatiquement..." readonly style="background: #f5f5f5;">
-                    <span style="font-size: 0.7rem; color: #999; display: block; margin-top: 4px;">
-                        Détecté depuis le nom du fichier
-                    </span>
-                </div>
-                <div class="form-group">
-                    <label>📄 Type de document</label>
-                    <select id="metaType">
-                        <option value="maintenance_manual">Manuel de maintenance</option>
-                        <option value="installation_manual">Manuel d'installation</option>
-                        <option value="troubleshooting_guide">Guide de dépannage</option>
-                        <option value="user_manual">Manuel utilisateur</option>
-                        <option value="technical_spec">Spécification technique</option>
-                        <option value="training_document">Document de formation</option>
-                        <option value="other">Autre</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>📌 Version</label>
-                    <input type="text" id="metaVersion" placeholder="Détectée automatiquement..." readonly style="background: #f5f5f5;">
-                    <span style="font-size: 0.7rem; color: #999; display: block; margin-top: 4px;">
-                        Détectée depuis le nom du fichier
-                    </span>
-                </div>
-                <div class="form-group">
-                    <label>👁️ Visibilité</label>
-                    <select id="metaVisibility">
-                        <option value="public">Public (Tout le monde)</option>
-                        <option value="private">Privé (Employés uniquement)</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>⚙️ Options avancées</label>
-                    <div class="checkbox-group">
-                        <label>
-                            <input type="checkbox" id="optSmartPDF" checked>
-                            📄 Smart PDF Processing (OCR + tableaux)
-                        </label>
-                        <label>
-                            <input type="checkbox" id="optVisionLLM" checked>
-                            🖼️ Vision LLM (description des images)
-                        </label>
-                        <label>
-                            <input type="checkbox" id="optSkipEmbedding">
-                            🧪 Mode Test (sans embeddings)
-                        </label>
+                    <div class="upload-metadata">
+                        <h3>📋 Métadonnées</h3>
+                        <p style="color: #666; font-size: 0.85rem; margin-bottom: 16px;">
+                            Les métadonnées seront détectées automatiquement depuis le nom du fichier.
+                        </p>
+                        
+                        <form id="metadataForm">
+                            <div class="form-group">
+                                <label>🏷️ Marque</label>
+                                <input type="text" id="metaBrand" placeholder="Détectée automatiquement..." readonly style="background: #f5f5f5;">
+                            </div>
+                            <div class="form-group">
+                                <label>📦 Modèle d'ascenseur</label>
+                                <input type="text" id="metaModel" placeholder="Détecté automatiquement..." readonly style="background: #f5f5f5;">
+                            </div>
+                            <div class="form-group">
+                                <label>📄 Type de document</label>
+                                <select id="metaType">
+                                    <option value="maintenance_manual">Manuel de maintenance</option>
+                                    <option value="installation_manual">Manuel d'installation</option>
+                                    <option value="troubleshooting_guide">Guide de dépannage</option>
+                                    <option value="user_manual">Manuel utilisateur</option>
+                                    <option value="technical_spec">Spécification technique</option>
+                                    <option value="training_document">Document de formation</option>
+                                    <option value="other">Autre</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>📌 Version</label>
+                                <input type="text" id="metaVersion" placeholder="Détectée automatiquement..." readonly style="background: #f5f5f5;">
+                            </div>
+                            <div class="form-group">
+                                <label>👁️ Visibilité</label>
+                                <select id="metaVisibility">
+                                    <option value="public">Public (Tout le monde)</option>
+                                    <option value="private">Privé (Employés uniquement)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>⚙️ Options avancées</label>
+                                <div class="checkbox-group">
+                                    <label>
+                                        <input type="checkbox" id="optSmartPDF" checked>
+                                        📄 Smart PDF Processing
+                                    </label>
+                                    <label>
+                                        <input type="checkbox" id="optVisionLLM" checked>
+                                        🖼️ Vision LLM
+                                    </label>
+                                    <label>
+                                        <input type="checkbox" id="optSkipEmbedding">
+                                        🧪 Mode Test
+                                    </label>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-success btn-block" id="uploadBtn">
+                                🚀 Upload & Traitement
+                            </button>
+                        </form>
+                    </div>
+
+                    <div class="upload-progress" id="uploadProgress" style="display:none;">
+                        <h3>⏳ Traitement en cours...</h3>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progressFill" style="width:0%"></div>
+                        </div>
+                        <p id="progressMessage">Initialisation...</p>
+                        <div id="taskStatus" class="task-status"></div>
                     </div>
                 </div>
-                <button type="submit" class="btn btn-success btn-block" id="uploadBtn">
-                    🚀 Upload & Traitement
-                </button>
-            </form>
-        </div>
-
-        <div class="upload-progress" id="uploadProgress" style="display:none;">
-            <h3>⏳ Traitement en cours...</h3>
-            <div class="progress-bar">
-                <div class="progress-fill" id="progressFill" style="width:0%"></div>
-            </div>
-            <p id="progressMessage">Initialisation...</p>
-            <div id="taskStatus" class="task-status"></div>
-        </div>
-    </div>
-</section>
+            </section>
 
             <!-- Documents Tab -->
             <section id="tab-documents" class="tab-content">
                 <div class="documents-header">
-                    <h3>Indexed Documents</h3>
+                    <h3>Documents indexés</h3>
                     <div class="documents-actions">
-                        <input type="text" id="docSearch" placeholder="🔍 Search documents..." class="search-input">
-                        <button class="btn btn-secondary" id="refreshDocsBtn">🔄 Refresh</button>
+                        <input type="text" id="docSearch" placeholder="🔍 Rechercher..." class="search-input">
+                        <button class="btn btn-secondary" id="refreshDocsBtn">🔄 Actualiser</button>
                     </div>
                 </div>
                 <div id="documentsList" class="documents-list">
-                    <p class="loading-text">Loading documents...</p>
+                    <p class="loading-text">Chargement des documents...</p>
                 </div>
                 <div class="pagination" id="docPagination"></div>
             </section>
@@ -237,81 +264,81 @@
             <!-- API Keys Tab -->
             <section id="tab-apikeys" class="tab-content">
                 <div class="apikeys-header">
-                    <h3>API Keys Management</h3>
-                    <button class="btn btn-primary" id="generateKeyBtn">➕ Generate New Key</button>
+                    <h3>Gestion des clés API</h3>
+                    <button class="btn btn-primary" id="generateKeyBtn">➕ Générer une clé</button>
                 </div>
                 <div class="apikeys-form" id="generateKeyForm" style="display:none;">
-                    <h4>Generate New API Key</h4>
+                    <h4>Générer une nouvelle clé API</h4>
                     <div class="form-group">
-                        <label>Role</label>
+                        <label>Rôle</label>
                         <select id="newKeyRole">
                             <option value="public">Public</option>
-                            <option value="employee">Employee</option>
+                            <option value="employee">Employé</option>
                             <option value="admin">Admin</option>
                         </select>
                     </div>
                     <div class="form-group">
                         <label>Description</label>
-                        <input type="text" id="newKeyDesc" placeholder="e.g., OTIS technician team">
+                        <input type="text" id="newKeyDesc" placeholder="Ex: Équipe technique OTIS">
                     </div>
-                    <button class="btn btn-success" id="confirmGenerateBtn">Generate</button>
-                    <button class="btn btn-secondary" id="cancelGenerateBtn">Cancel</button>
+                    <button class="btn btn-success" id="confirmGenerateBtn">Générer</button>
+                    <button class="btn btn-secondary" id="cancelGenerateBtn">Annuler</button>
                 </div>
                 <div id="apiKeysList" class="apikeys-list">
-                    <p class="loading-text">Loading API keys...</p>
+                    <p class="loading-text">Chargement des clés API...</p>
                 </div>
             </section>
 
             <!-- Feedback Tab -->
             <section id="tab-feedback" class="tab-content">
                 <div class="feedback-header">
-                    <h3>Feedback Analytics</h3>
+                    <h3>Analyse des feedbacks</h3>
                     <div class="feedback-filters">
                         <select id="feedbackFilter" class="filter-select">
-                            <option value="all">All</option>
-                            <option value="high">High Score (4-5)</option>
-                            <option value="medium">Medium Score (2-3)</option>
-                            <option value="low">Low Score (1)</option>
+                            <option value="all">Tous</option>
+                            <option value="high">Score élevé (4-5)</option>
+                            <option value="medium">Score moyen (2-3)</option>
+                            <option value="low">Score faible (1)</option>
                         </select>
-                        <button class="btn btn-secondary" id="refreshFeedbackBtn">🔄 Refresh</button>
+                        <button class="btn btn-secondary" id="refreshFeedbackBtn">🔄 Actualiser</button>
                     </div>
                 </div>
                 <div id="feedbackStats" class="feedback-stats">
                     <div class="stat-mini">
-                        <span class="label">Total Feedback</span>
+                        <span class="label">Total feedback</span>
                         <span class="value" id="fbTotal">0</span>
                     </div>
                     <div class="stat-mini">
-                        <span class="label">Avg Score</span>
+                        <span class="label">Score moyen</span>
                         <span class="value" id="fbAvg">0</span>
                     </div>
                     <div class="stat-mini">
-                        <span class="label">Helpful %</span>
+                        <span class="label">Utiles %</span>
                         <span class="value" id="fbHelpful">0%</span>
                     </div>
                 </div>
                 <div id="feedbackList" class="feedback-list">
-                    <p class="loading-text">Loading feedback...</p>
+                    <p class="loading-text">Chargement des feedbacks...</p>
                 </div>
             </section>
 
             <!-- Cache Tab -->
             <section id="tab-cache" class="tab-content">
                 <div class="cache-header">
-                    <h3>Cache Management</h3>
-                    <button class="btn btn-danger" id="clearCacheBtn">🗑️ Clear Cache</button>
+                    <h3>Gestion du cache</h3>
+                    <button class="btn btn-danger" id="clearCacheBtn">🗑️ Vider le cache</button>
                 </div>
                 <div class="cache-stats" id="cacheStats">
                     <div class="stat-mini">
-                        <span class="label">Status</span>
-                        <span class="value" id="cacheStatus">Checking...</span>
+                        <span class="label">Statut</span>
+                        <span class="value" id="cacheStatus">Vérification...</span>
                     </div>
                     <div class="stat-mini">
-                        <span class="label">Cached Embeddings</span>
+                        <span class="label">Embeddings cachés</span>
                         <span class="value" id="cacheEmbeddings">0</span>
                     </div>
                     <div class="stat-mini">
-                        <span class="label">Cached Answers</span>
+                        <span class="label">Réponses cachées</span>
                         <span class="value" id="cacheAnswers">0</span>
                     </div>
                     <div class="stat-mini">
@@ -320,7 +347,7 @@
                     </div>
                 </div>
                 <div class="cache-actions">
-                    <button class="btn btn-secondary" id="refreshCacheBtn">🔄 Refresh Stats</button>
+                    <button class="btn btn-secondary" id="refreshCacheBtn">🔄 Actualiser</button>
                 </div>
             </section>
         </main>

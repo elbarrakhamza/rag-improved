@@ -1,19 +1,5 @@
 // API Configuration
-// Détection automatique de l'environnement
-const getApiBase = () => {
-    // En production (domaine stage.enset.top)
-    if (window.location.hostname.includes('stage.enset.top')) {
-        return 'https://api-rag.stage.enset.top';
-    }
-    // En développement local
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        return 'http://localhost:8000';
-    }
-    // Fallback
-    return 'https://api-rag.stage.enset.top';
-};
-
-const API_BASE = getApiBase();
+let API_BASE = localStorage.getItem('apiBase') || 'https://api-rag.stage.enset.top';
 
 // Store API key (from localStorage)
 let apiKey = localStorage.getItem('apiKey') || '';
@@ -27,6 +13,15 @@ const api = {
 
     getApiKey() {
         return apiKey;
+    },
+
+    setApiBase(url) {
+        API_BASE = url;
+        localStorage.setItem('apiBase', url);
+    },
+
+    getApiBase() {
+        return API_BASE;
     },
 
     async request(endpoint, options = {}) {
@@ -187,7 +182,7 @@ class TaskPoller {
         this.onError = onError;
         this.polling = false;
         this.interval = 1000;
-        this.timeout = 300000; // 5 minutes
+        this.timeout = 300000;
         this.startTime = Date.now();
     }
 
@@ -220,7 +215,6 @@ class TaskPoller {
                 this.onProgress(status);
             }
 
-            // Check timeout
             if (Date.now() - this.startTime > this.timeout) {
                 this.polling = false;
                 this.onError('Task timeout');
@@ -235,6 +229,6 @@ class TaskPoller {
     }
 }
 
-// Exporter pour utilisation dans d'autres fichiers
+// Exporter pour utilisation globale
 window.api = api;
 window.TaskPoller = TaskPoller;

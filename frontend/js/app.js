@@ -1,43 +1,95 @@
 // Main Application
 const app = {
     init() {
-        this.setupNavigation();
-        this.setupLogout();
-        this.loadDashboard();
+        // Vérifier si déjà connecté
+        const savedKey = localStorage.getItem('apiKey');
+        const savedUrl = localStorage.getItem('apiBase');
         
-        // Check API connection
-        this.checkApiConnection();
-        
-        // Gérer la clé API
-        this.handleApiKey();
-    },
-
-    handleApiKey() {
-        // Vérifier si une clé API est dans l'URL (paramètre ?api_key=xxx)
-        const urlParams = new URLSearchParams(window.location.search);
-        const apiKeyParam = urlParams.get('api_key');
-        
-        if (apiKeyParam) {
-            api.setApiKey(apiKeyParam);
-            // Nettoyer l'URL
-            window.history.replaceState({}, document.title, window.location.pathname);
-            showToast('✅ API Key chargée depuis l\'URL', 'success', 3000);
-        }
-        
-        // Si pas de clé, demander
-        if (!api.getApiKey()) {
-            setTimeout(() => this.showApiKeyModal(), 500);
-        }
-    },
-
-    showApiKeyModal() {
-        const key = prompt('🔑 Entrez votre clé API admin :');
-        if (key) {
-            api.setApiKey(key);
+        if (savedKey && savedUrl) {
+            api.setApiKey(savedKey);
+            api.setApiBase(savedUrl);
+            this.showApp();
             this.checkApiConnection();
         } else {
-            // Réessayer après 3 secondes
-            setTimeout(() => this.showApiKeyModal(), 3000);
+            this.showLogin();
+        }
+        
+        // Setup login
+        document.getElementById('loginForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleLogin();
+        });
+        
+        // Setup logout
+        document.getElementById('logoutBtn').addEventListener('click', () => {
+            this.handleLogout();
+        });
+        
+        // Setup navigation après chargement de l'app
+        this.setupNavigation();
+    },
+
+    showLogin() {
+        document.getElementById('loginPage').style.display = 'flex';
+        document.getElementById('appContainer').style.display = 'none';
+        document.getElementById('loginError').style.display = 'none';
+    },
+
+    showApp() {
+        document.getElementById('loginPage').style.display = 'none';
+        document.getElementById('appContainer').style.display = 'flex';
+    },
+
+    async handleLogin() {
+        const apiKeyInput = document.getElementById('apiKeyInput');
+        const apiUrlInput = document.getElementById('apiUrlInput');
+        const errorDiv = document.getElementById('loginError');
+        
+        const key = apiKeyInput.value.trim();
+        const url = apiUrlInput.value.trim();
+        
+        if (!key) {
+            errorDiv.textContent = '❌ Veuillez entrer une clé API';
+            errorDiv.style.display = 'block';
+            return;
+        }
+        
+        if (!url) {
+            errorDiv.textContent = '❌ Veuillez entrer l\'URL de l\'API';
+            errorDiv.style.display = 'block';
+            return;
+        }
+        
+        // Tester la connexion
+        try {
+            api.setApiKey(key);
+            api.setApiBase(url);
+            
+            const result = await api.health();
+            
+            if (result.status === 'ok' || result.status === 'degraded') {
+                // Connexion réussie
+                errorDiv.style.display = 'none';
+                this.showApp();
+                this.checkApiConnection();
+                showToast('✅ Connexion réussie !', 'success', 3000);
+            } else {
+                errorDiv.textContent = '❌ API non disponible. Vérifiez l\'URL.';
+                errorDiv.style.display = 'block';
+            }
+        } catch (error) {
+            errorDiv.textContent = `❌ Erreur de connexion: ${error.message}`;
+            errorDiv.style.display = 'block';
+        }
+    },
+
+    handleLogout() {
+        if (confirm('Voulez-vous vraiment vous déconnecter ?')) {
+            localStorage.removeItem('apiKey');
+            localStorage.removeItem('apiBase');
+            this.showLogin();
+            document.getElementById('apiKeyInput').value = '';
+            showToast('🔓 Déconnecté', 'info', 3000);
         }
     },
 
@@ -58,6 +110,7 @@ const app = {
                 const label = item.querySelector('.label').textContent;
                 pageTitle.textContent = label;
                 
+                // Rafraîchir les onglets
                 if (tabId === 'documents' && window.documentsManager) {
                     window.documentsManager.loadDocuments();
                 }
@@ -89,17 +142,6 @@ const app = {
         });
     },
 
-    setupLogout() {
-        document.getElementById('logoutBtn').addEventListener('click', () => {
-            if (confirm('Êtes-vous sûr de vouloir vous déconnecter ?')) {
-                localStorage.removeItem('apiKey');
-                document.getElementById('userRole').textContent = 'Non connecté';
-                showToast('🔓 Déconnecté', 'info', 3000);
-                setTimeout(() => this.showApiKeyModal(), 1000);
-            }
-        });
-    },
-
     async checkApiConnection() {
         const statusElement = document.querySelector('.api-key-status span:last-child');
         const dotElement = document.querySelector('.dot');
@@ -110,34 +152,24 @@ const app = {
             dotElement.className = 'dot green';
             statusElement.textContent = '✅ Connecté';
             roleElement.textContent = '👑 Admin';
-            showToast('✅ Connecté à l\'API', 'success', 2000);
-            console.log('Health check:', health);
         } catch (error) {
             dotElement.className = 'dot red';
             statusElement.textContent = '❌ Déconnecté';
             roleElement.textContent = '⚠️ Erreur';
-            showToast(`❌ Impossible de se connecter à l'API: ${error.message}`, 'error', 5000);
-            console.error('API Connection error:', error);
+            showToast(`❌ Erreur de connexion: ${error.message}`, 'error', 5000);
         }
     },
 
     async loadDashboard() {
         try {
-            // Documents count
             const docs = await api.getDocuments(1, 1);
             document.getElementById('statDocuments').textContent = docs.total || 0;
             
-            // Cache stats
             const cacheStats = await api.getCacheStats();
             document.getElementById('statCache').textContent = cacheStats.total_cached || 0;
             
-            // Top questions count
             const topQuestions = await api.getTopQuestions(1);
             document.getElementById('statFeedback').textContent = topQuestions.length || 0;
-            
-            // Chunks count (approx)
-            const allDocs = await api.getDocuments(1, 100);
-            document.getElementById('statChunks').textContent = '...';
             
         } catch (error) {
             console.error('Error loading dashboard:', error);
@@ -160,15 +192,7 @@ function showToast(message, type = 'info', duration = 5000) {
 
 // Initialization
 document.addEventListener('DOMContentLoaded', () => {
-    // Vérifier si les managers existent
-    if (typeof api === 'undefined') {
-        console.error('❌ API module not loaded');
-        return;
-    }
-    
-    // Initialiser l'application
     app.init();
 });
 
-// Exposer app globalement
 window.app = app;
