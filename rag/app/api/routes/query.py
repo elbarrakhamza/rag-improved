@@ -50,13 +50,14 @@ async def query(
             
             logger.info(f"Question reçue de {role}: {question[:100]}...")
             
-            # 1. Vérifier le cache pour la réponse complète (AVEC le rôle)
+            # 1. Vérifier le cache - d'abord public puis rôle
             cached_answer = None
             if use_cache:
-                cached_answer = embedding_cache.get_answer(question, role=role)
+                # On ne sait pas encore si le document est public, on vérifie d'abord
+                cached_answer = embedding_cache.get_answer(question, role=role, is_public_doc=True)
             
             if cached_answer:
-                logger.info(f"Réponse en cache pour: {question[:50]}... (rôle={role})")
+                logger.info(f"Réponse en cache pour: {question[:50]}... (rôle={role}, type={cached_answer.get('cache_type', 'unknown')})")
                 await feedback_analyzer.record_question_pattern(db_connection, question)
                 return {
                     "answer": cached_answer["answer"],
@@ -65,7 +66,7 @@ async def query(
                     "cached": True
                 }
             
-            # 2. Embedding (avec cache - partagé entre tous les rôles, c'est OK)
+            # 2. Embedding (avec cache - partagé entre tous les rôles)
             embedded_question = embedder.embed(question, use_cache=use_cache)
             embedded_question_str = str(embedded_question)
             
@@ -90,28 +91,37 @@ async def query(
             
             logger.info(f"{len(retrieved_chunks)} chunks récupérés")
             
-            # 4. Construction du prompt et génération
+            # 4. Vérifier si les résultats sont tous publics
+            is_public_doc = True
+            for chunk in retrieved_chunks:
+                visibility = chunk.get("metadata", {}).get("visibility", "public")
+                if visibility == "private":
+                    is_public_doc = False
+                    break
+            
+            # 5. Construction du prompt et génération
             prompt = build_prompt(
                 question=question,
                 documents=retrieved_chunks
             )
             response = await generate(prompt)
             
-            # 5. Mettre en cache la réponse AVEC le rôle
+            # 6. Mettre en cache la réponse (avec stockage public si applicable)
             if use_cache:
-                # Pour les sources, on ne les garde pas en cache (sécurité)
                 embedding_cache.set_answer(
                     question, 
                     response[0], 
                     response[1],
                     role=role,
-                    sources=[]  # Pas de sources en cache
+                    sources=[],
+                    is_public_doc=is_public_doc
                 )
+                logger.info(f"Réponse mise en cache (public={is_public_doc}, rôle={role})")
             
-            # 6. Enregistrer la question pour analyse
+            # 7. Enregistrer la question pour analyse
             await feedback_analyzer.record_question_pattern(db_connection, question)
             
-            # 7. Préparer les sources (uniquement si le rôle le permet)
+            # 8. Préparer les sources (uniquement si le rôle le permet)
             if role in ["admin", "employee"]:
                 for chunk in retrieved_chunks:
                     metadata = chunk.get("metadata", {})

@@ -34,9 +34,18 @@ class EmbeddingCache:
         return f"embed:{hashlib.md5(question.encode('utf-8')).hexdigest()}"
     
     def _get_answer_key(self, question: str, role: str = "public") -> str:
-        """Clé de cache avec le rôle pour isoler les réponses par permission"""
-        # Ajouter le rôle dans la clé pour éviter le partage entre admin et public
+        """
+        Clé de cache avec le rôle pour isoler les réponses par permission.
+        Les réponses sont mises en cache avec le rôle le plus restrictif.
+        """
+        # Si la réponse provient de documents publics, elle est accessible à tous
+        # Mais on ne sait pas à l'avance si la réponse est publique ou non
+        # On utilise donc un cache séparé par rôle, mais avec un mécanisme de fallback
         return f"answer:{hashlib.md5(question.encode('utf-8')).hexdigest()}:{role}"
+    
+    def _get_public_answer_key(self, question: str) -> str:
+        """Clé pour le cache public (accessible à tous)"""
+        return f"answer:{hashlib.md5(question.encode('utf-8')).hexdigest()}:public"
     
     def get_embedding(self, question: str) -> Optional[list]:
         if not self._enabled or not self._client:
@@ -68,41 +77,79 @@ class EmbeddingCache:
             logger.warning(f"Erreur d'écriture du cache: {e}")
             return False
     
-    def get_answer(self, question: str, role: str = "public") -> Optional[dict]:
-        """Récupère une réponse en cache avec le rôle spécifique"""
+    def get_answer(self, question: str, role: str = "public", is_public_doc: bool = False) -> Optional[dict]:
+        """
+        Récupère une réponse en cache.
+        - Si is_public_doc = True: cherche d'abord dans le cache public, puis dans le cache du rôle
+        - Si is_public_doc = False: cherche seulement dans le cache du rôle
+        """
         if not self._enabled or not self._client:
             return None
         
         try:
+            # 1. Si le document est public, chercher d'abord dans le cache public
+            if is_public_doc:
+                public_key = self._get_public_answer_key(question)
+                cached = self._client.get(public_key)
+                if cached:
+                    data = json.loads(cached)
+                    data["cached"] = True
+                    data["cache_type"] = "public"
+                    logger.debug(f"Cache hit public pour: {question[:50]}...")
+                    return data
+            
+            # 2. Chercher dans le cache du rôle spécifique
             key = self._get_answer_key(question, role)
             cached = self._client.get(key)
             if cached:
                 data = json.loads(cached)
                 data["cached"] = True
-                logger.debug(f"Cache hit pour la réponse (rôle={role}): {question[:50]}...")
+                data["cache_type"] = "role"
+                logger.debug(f"Cache hit pour le rôle {role}: {question[:50]}...")
                 return data
+                
         except Exception as e:
             logger.warning(f"Erreur de lecture du cache réponse: {e}")
         return None
     
-    def set_answer(self, question: str, answer: str, token_usage: int, role: str = "public", sources: list = None) -> bool:
-        """Cache une réponse avec le rôle spécifique"""
+    def set_answer(self, question: str, answer: str, token_usage: int, 
+                   role: str = "public", sources: list = None, 
+                   is_public_doc: bool = False) -> bool:
+        """
+        Cache une réponse.
+        - Si is_public_doc = True: stocke dans le cache public ET dans le cache du rôle
+        - Si is_public_doc = False: stocke seulement dans le cache du rôle
+        """
         if not self._enabled or not self._client:
             return False
         
         try:
-            key = self._get_answer_key(question, role)
             data = {
                 "answer": answer,
                 "token_usage": token_usage,
                 "sources": sources or []
             }
+            
+            # 1. Stocker dans le cache du rôle
+            key = self._get_answer_key(question, role)
             self._client.setex(
                 key,
                 settings.cache_ttl_seconds,
                 json.dumps(data)
             )
-            logger.debug(f"Réponse mise en cache (rôle={role}): {question[:50]}...")
+            
+            # 2. Si c'est un document public, stocker aussi dans le cache public
+            if is_public_doc:
+                public_key = self._get_public_answer_key(question)
+                self._client.setex(
+                    public_key,
+                    settings.cache_ttl_seconds,
+                    json.dumps(data)
+                )
+                logger.debug(f"Réponse mise en cache public et rôle {role}: {question[:50]}...")
+            else:
+                logger.debug(f"Réponse mise en cache pour le rôle {role}: {question[:50]}...")
+            
             return True
         except Exception as e:
             logger.warning(f"Erreur d'écriture du cache réponse: {e}")
@@ -129,10 +176,12 @@ class EmbeddingCache:
         try:
             embed_keys = self._client.keys("embed:*")
             answer_keys = self._client.keys("answer:*")
+            public_keys = self._client.keys("answer:*:public")
             return {
                 "enabled": True,
                 "cached_embeddings": len(embed_keys),
                 "cached_answers": len(answer_keys),
+                "cached_public_answers": len(public_keys),
                 "total_cached": len(embed_keys) + len(answer_keys),
                 "ttl_seconds": settings.cache_ttl_seconds
             }
