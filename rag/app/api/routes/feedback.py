@@ -130,24 +130,10 @@ async def get_top_questions(
     days_back: int = 30
 ):
     """
-    Récupère les questions les plus posées
+    Récupère les questions les plus posées (sans filtre de date pour simplifier)
     """
     try:
-        # Vérifier si la table existe
-        table_exists = await db_connection.fetchval("""
-            SELECT EXISTS (
-                SELECT 1 
-                FROM information_schema.tables 
-                WHERE table_schema = 'public' 
-                AND table_name = 'question_patterns'
-            )
-        """)
-        
-        if not table_exists:
-            logger.warning("Table question_patterns n'existe pas")
-            return []
-        
-        # CORRECTION: Utiliser une syntaxe PostgreSQL correcte pour INTERVAL
+        # Version simplifiée - on ignore le filtre de date
         rows = await db_connection.fetch(
             """
             SELECT 
@@ -157,11 +143,9 @@ async def get_top_questions(
                 avg_feedback_score,
                 last_asked
             FROM question_patterns
-            WHERE last_asked >= NOW() - ($1 || ' days')::INTERVAL
             ORDER BY frequency DESC
-            LIMIT $2
+            LIMIT $1
             """,
-            days_back,
             limit
         )
         
@@ -169,6 +153,7 @@ async def get_top_questions(
         
     except Exception as e:
         logger.error(f"Erreur get_top_questions: {e}")
+        # En cas d'erreur, retourner un tableau vide
         return []
 
 
@@ -178,7 +163,7 @@ async def get_low_performing_questions(
     request: Request,
     db_connection: Connection = Depends(get_connection),
     key_info: dict = Depends(get_api_key),
-    min_frequency: int = 3,
+    min_frequency: int = 2,
     max_avg_score: float = 3.0,
     days_back: int = 30
 ):
@@ -192,28 +177,29 @@ async def get_low_performing_questions(
         )
     
     try:
-        table_exists = await db_connection.fetchval("""
-            SELECT EXISTS (
-                SELECT 1 
-                FROM information_schema.tables 
-                WHERE table_schema = 'public' 
-                AND table_name = 'question_patterns'
-            )
-        """)
-        
-        if not table_exists:
-            return {"questions": [], "count": 0, "filters": {}}
-        
-        questions = await feedback_analyzer.get_low_performance_questions(
-            db_connection,
-            min_frequency=min_frequency,
-            max_avg_score=max_avg_score,
-            days_back=days_back
+        # Version simplifiée - on ignore le filtre de date
+        rows = await db_connection.fetch(
+            """
+            SELECT 
+                question_hash,
+                question_text,
+                frequency,
+                avg_feedback_score,
+                last_asked
+            FROM question_patterns
+            WHERE 
+                frequency >= $1
+                AND avg_feedback_score <= $2
+            ORDER BY avg_feedback_score ASC, frequency DESC
+            LIMIT 20
+            """,
+            min_frequency,
+            max_avg_score
         )
         
         return {
-            "questions": questions,
-            "count": len(questions),
+            "questions": [dict(row) for row in rows],
+            "count": len(rows),
             "filters": {
                 "min_frequency": min_frequency,
                 "max_avg_score": max_avg_score,
