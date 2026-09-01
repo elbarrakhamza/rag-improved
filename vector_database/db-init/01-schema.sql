@@ -1,10 +1,11 @@
+
 CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE IF NOT EXISTS documents (
     id        SERIAL PRIMARY KEY,
     content   TEXT,
     metadata  JSONB,
-    embedding vector(2048)  -- ← CHANGÉ de 1024 à 2048
+    embedding vector(1024)
 );
 
 CREATE INDEX hnsw_index

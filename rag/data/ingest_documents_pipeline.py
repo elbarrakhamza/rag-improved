@@ -224,74 +224,67 @@ def enrich_chunks_with_embeddings(
     batch_size: int,
     skip_embedding: bool = False,
 ) -> None:
-    """
-    Enrichit les chunks avec des embeddings via l'API NVIDIA
-    """
+    """Génère des embeddings via API NVIDIA (1024 dimensions)"""
     if not chunks:
         return
     
     if skip_embedding:
-        print(f"⚠️  Mode SKIP EMBEDDING activé - {len(chunks)} chunks traités sans embeddings")
         for chunk in chunks:
             chunk["embedding"] = [0.0] * 1024
         return
 
-    print(f"🔄 Génération des embeddings via API NVIDIA pour {len(chunks)} chunks...")
+    print(f"🔄 Génération des embeddings via API NVIDIA...")
     
-    # Importer le client NVIDIA
-    import requests
-    import os
+    import requests, os, math
     
     api_key = os.getenv("NVIDIA_API_KEY")
     if not api_key:
-        print("⚠️ NVIDIA_API_KEY non trouvée - utilisation d'embeddings factices")
+        print("⚠️ NVIDIA_API_KEY non trouvée")
         for chunk in chunks:
             chunk["embedding"] = [0.0] * 1024
         return
     
-    # API NVIDIA NIM
     url = "https://integrate.api.nvidia.com/v1/embeddings"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     }
     
-    # Traiter par lots pour éviter les limites
-    batch_size = 10
     all_embeddings = []
+    batch_size = 10
     
     for i in range(0, len(chunks), batch_size):
         batch = chunks[i:i+batch_size]
         texts = [chunk["page_content"] for chunk in batch]
         
-        payload = {
-            "input": texts,
-            "model": embedding_model,
-            "encoding_format": "float"
-        }
+        payload = {"input": texts, "model": embedding_model, "encoding_format": "float"}
         
         try:
             response = requests.post(url, headers=headers, json=payload, timeout=60)
             if response.status_code == 200:
                 data = response.json()
-                embeddings = [item["embedding"] for item in data["data"]]
-                all_embeddings.extend(embeddings)
-                print(f"   ✅ Batch {i//batch_size + 1}: {len(embeddings)} embeddings")
+                full_embeddings = [item["embedding"] for item in data["data"]]
+                
+                for emb in full_embeddings:
+                    sliced = emb[:1024]
+                    norm = math.sqrt(sum(x * x for x in sliced))
+                    if norm > 0:
+                        sliced = [x / norm for x in sliced]
+                    all_embeddings.append(sliced)
+                print(f"   ✅ Batch {i//batch_size + 1}: {len(full_embeddings)} embeddings (1024 dims)")
             else:
-                print(f"   ❌ API error: {response.status_code} - {response.text}")
-                # Fallback sur embeddings factices
-                for chunk in batch:
+                print(f"   ❌ API error: {response.status_code}")
+                for _ in batch:
                     all_embeddings.append([0.0] * 1024)
         except Exception as e:
             print(f"   ❌ Erreur: {e}")
-            for chunk in batch:
+            for _ in batch:
                 all_embeddings.append([0.0] * 1024)
     
-    # Assigner les embeddings aux chunks
     for i, embedding in enumerate(all_embeddings):
         chunks[i]["embedding"] = embedding
     
-    print(f"✅ {len(all_embeddings)} embeddings générés via API NVIDIA")
+    print(f"✅ {len(all_embeddings)} embeddings générés (1024 dims)")
 
 
 def save_chunks_to_json(chunks: List[Dict[str, Any]], output_path: str) -> None:

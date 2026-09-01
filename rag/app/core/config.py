@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     # NVIDIA API pour les embeddings
     nvidia_api_key: str  # RENDU OBLIGATOIRE
     embedding_model: str = "nvidia/nemotron-3-embed-1b"
-    embedding_dim: int = 2048
+    embedding_dim: int = 1024
     nvidia_api_url: str = "https://integrate.api.nvidia.com/v1/embeddings"
     
     max_tokens: int = 512

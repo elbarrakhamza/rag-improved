@@ -18,9 +18,9 @@ CREATE TABLE IF NOT EXISTS documents (
     id SERIAL PRIMARY KEY,
     content TEXT,
     metadata JSONB,
-    embedding vector(2048),  -- ← CHANGÉ de 1024 à 2048
-    feedback_score FLOAT DEFAULT 0,
-    feedback_count INTEGER DEFAULT 0,
+    embedding vector(1024),
+    feedback_score FLOAT DEFAULT 0,  -- Score moyen de feedback
+    feedback_count INTEGER DEFAULT 0, -- Nombre de feedbacks
     created_at TIMESTAMP DEFAULT NOW()
 );
 
