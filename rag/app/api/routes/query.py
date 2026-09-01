@@ -25,23 +25,7 @@ class QueryRequest(BaseModel):
     top_k: Optional[int] = Field(default=None, ge=1, le=20)
 
 
-class SourceInfo(BaseModel):
-    page: str
-    source_file: str
-    content: str
-    similarity: float
-    feedback_score: float
-    feedback_count: int
-
-
-class QueryResponse(BaseModel):
-    answer: str
-    token_usage: int
-    sources: List[SourceInfo] = []
-    cached: bool = False
-
-
-@router.post("/query", response_model=QueryResponse)
+@router.post("/query", response_model=None)
 @limiter.limit("3/minute")
 async def query(
     request: Request,
@@ -57,7 +41,9 @@ async def query(
     sources = []
     
     try:
-        async with asyncio.timeout(15):
+        # Remplacer async with asyncio.timeout(15) par asyncio.wait_for
+        async def _process():
+            nonlocal response, sources
             question = query_request.question
             use_cache = query_request.use_cache
             top_k = query_request.top_k or settings.top_k
@@ -73,12 +59,12 @@ async def query(
             if cached_answer:
                 logger.info(f"Réponse en cache pour: {question[:50]}...")
                 await feedback_analyzer.record_question_pattern(db_connection, question)
-                return QueryResponse(
-                    answer=cached_answer["answer"],
-                    token_usage=cached_answer["token_usage"],
-                    sources=[],
-                    cached=True
-                )
+                return {
+                    "answer": cached_answer["answer"],
+                    "token_usage": cached_answer["token_usage"],
+                    "sources": [],
+                    "cached": True
+                }
             
             # 2. Embedding (avec cache)
             embedded_question = embedder.embed(question, use_cache=use_cache)
@@ -96,12 +82,12 @@ async def query(
             if len(retrieved_chunks) == 0:
                 logger.warning("Aucun chunk trouvé pour la question")
                 await feedback_analyzer.record_question_pattern(db_connection, question)
-                return QueryResponse(
-                    answer="Information not found",
-                    token_usage=0,
-                    sources=[],
-                    cached=False
-                )
+                return {
+                    "answer": "Information not found",
+                    "token_usage": 0,
+                    "sources": [],
+                    "cached": False
+                }
             
             logger.info(f"{len(retrieved_chunks)} chunks récupérés")
             
@@ -122,16 +108,25 @@ async def query(
             # 7. Préparer les sources
             for chunk in retrieved_chunks:
                 metadata = chunk.get("metadata", {})
-                sources.append(
-                    SourceInfo(
-                        page=str(metadata.get("page_number", "N/A")),
-                        source_file=metadata.get("source_file", "N/A"),
-                        content=chunk.get("content", "")[:200] + "...",
-                        similarity=chunk.get("similarity", 0),
-                        feedback_score=chunk.get("feedback_score", 0),
-                        feedback_count=chunk.get("feedback_count", 0)
-                    )
-                )
+                sources.append({
+                    "page": str(metadata.get("page_number", "N/A")),
+                    "source_file": metadata.get("source_file", "N/A"),
+                    "content": chunk.get("content", "")[:200] + "...",
+                    "similarity": chunk.get("similarity", 0),
+                    "feedback_score": chunk.get("feedback_score", 0),
+                    "feedback_count": chunk.get("feedback_count", 0)
+                })
+            
+            return {
+                "answer": response[0] if response else "Erreur: pas de réponse générée",
+                "token_usage": response[1] if response else 0,
+                "sources": sources,
+                "cached": False
+            }
+        
+        # Exécuter avec timeout via asyncio.wait_for
+        result = await asyncio.wait_for(_process(), timeout=15)
+        return result
 
     except asyncio.TimeoutError:
         raise HTTPException(
@@ -144,10 +139,3 @@ async def query(
             status_code=500,
             detail=f"Internal server error: {str(e)}"
         )
-    
-    return QueryResponse(
-        answer=response[0] if response else "Erreur: pas de réponse générée",
-        token_usage=response[1] if response else 0,
-        sources=sources,
-        cached=False
-    )
