@@ -25,35 +25,43 @@ const api = {
     },
 
     async request(endpoint, options = {}) {
-        const url = `${API_BASE}${endpoint}`;
-        const headers = {
-            'Content-Type': 'application/json',
-            ...options.headers
-        };
+    const url = `${API_BASE}${endpoint}`;
+    const headers = {
+        'Content-Type': 'application/json',
+        ...options.headers
+    };
+    
+    if (apiKey) {
+        headers['X-API-Key'] = apiKey;
+    }
+    
+    try {
+        const response = await fetch(url, {
+            ...options,
+            headers,
+            mode: 'cors',
+            credentials: 'include'
+        });
         
-        if (apiKey) {
-            headers['X-API-Key'] = apiKey;
+        // Gérer les erreurs d'authentification
+        if (response.status === 401 || response.status === 403) {
+            // Clé invalide
+            localStorage.removeItem('apiKey');
+            localStorage.removeItem('apiBase');
+            throw new Error('Invalid API Key');
         }
         
-        try {
-            const response = await fetch(url, {
-                ...options,
-                headers,
-                mode: 'cors',
-                credentials: 'include'
-            });
-            
-            if (!response.ok) {
-                const error = await response.json().catch(() => ({}));
-                throw new Error(error.detail || `HTTP ${response.status}`);
-            }
-            
-            return response.json();
-        } catch (error) {
-            console.error('API Error:', error);
-            throw error;
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.detail || `HTTP ${response.status}`);
         }
-    },
+        
+        return response.json();
+    } catch (error) {
+        console.error('API Error:', error);
+        throw error;
+    }
+},
 
     // Health Check
     async health() {

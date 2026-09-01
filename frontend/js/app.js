@@ -8,8 +8,8 @@ const app = {
         if (savedKey && savedUrl) {
             api.setApiKey(savedKey);
             api.setApiBase(savedUrl);
-            this.showApp();
-            this.checkApiConnection();
+            // Vérifier si la clé est valide avant d'afficher l'app
+            this.verifyApiKey(savedKey, savedUrl);
         } else {
             this.showLogin();
         }
@@ -40,6 +40,31 @@ const app = {
         document.getElementById('appContainer').style.display = 'flex';
     },
 
+    async verifyApiKey(key, url) {
+        try {
+            api.setApiKey(key);
+            api.setApiBase(url);
+            
+            // Tester avec un endpoint protégé (ex: admin/cache/stats)
+            const result = await api.getCacheStats();
+            
+            // Si on arrive ici, la clé est valide
+            this.showApp();
+            this.checkApiConnection();
+            showToast('✅ Connexion réussie !', 'success', 3000);
+            
+        } catch (error) {
+            // Clé invalide
+            console.error('Invalid API key:', error);
+            localStorage.removeItem('apiKey');
+            localStorage.removeItem('apiBase');
+            this.showLogin();
+            document.getElementById('loginError').textContent = '❌ Clé API invalide. Veuillez réessayer.';
+            document.getElementById('loginError').style.display = 'block';
+            document.getElementById('apiKeyInput').value = '';
+        }
+    },
+
     async handleLogin() {
         const apiKeyInput = document.getElementById('apiKeyInput');
         const apiUrlInput = document.getElementById('apiUrlInput');
@@ -60,26 +85,28 @@ const app = {
             return;
         }
         
-        // Tester la connexion
+        // Tester la connexion avec un endpoint protégé
         try {
             api.setApiKey(key);
             api.setApiBase(url);
             
-            const result = await api.health();
+            // Tester avec admin/cache/stats (nécessite une clé admin valide)
+            const result = await api.getCacheStats();
             
-            if (result.status === 'ok' || result.status === 'degraded') {
-                // Connexion réussie
-                errorDiv.style.display = 'none';
-                this.showApp();
-                this.checkApiConnection();
-                showToast('✅ Connexion réussie !', 'success', 3000);
-            } else {
-                errorDiv.textContent = '❌ API non disponible. Vérifiez l\'URL.';
-                errorDiv.style.display = 'block';
-            }
+            // Si on arrive ici, la clé est valide
+            errorDiv.style.display = 'none';
+            this.showApp();
+            this.checkApiConnection();
+            showToast('✅ Connexion réussie !', 'success', 3000);
+            
         } catch (error) {
-            errorDiv.textContent = `❌ Erreur de connexion: ${error.message}`;
+            // Clé invalide ou erreur réseau
+            errorDiv.textContent = `❌ Clé API invalide ou API inaccessible: ${error.message}`;
             errorDiv.style.display = 'block';
+            // Nettoyer les credentials
+            localStorage.removeItem('apiKey');
+            localStorage.removeItem('apiBase');
+            api.setApiKey('');
         }
     },
 
@@ -87,8 +114,10 @@ const app = {
         if (confirm('Voulez-vous vraiment vous déconnecter ?')) {
             localStorage.removeItem('apiKey');
             localStorage.removeItem('apiBase');
+            api.setApiKey('');
             this.showLogin();
             document.getElementById('apiKeyInput').value = '';
+            document.getElementById('loginError').style.display = 'none';
             showToast('🔓 Déconnecté', 'info', 3000);
         }
     },
