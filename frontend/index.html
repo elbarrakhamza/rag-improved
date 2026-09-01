@@ -123,84 +123,101 @@
             </section>
 
             <!-- Upload Tab -->
-            <section id="tab-upload" class="tab-content">
-                <div class="upload-container">
-                    <div class="upload-area" id="uploadArea">
-                        <div class="upload-icon">📤</div>
-                        <h3>Drag & Drop files here</h3>
-                        <p>or</p>
-                        <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
-                            Browse Files
-                        </button>
-                        <input type="file" id="fileInput" multiple accept=".pdf,.txt,.md,.markdown,.zip" style="display:none">
-                        <div id="fileList" class="file-list"></div>
-                    </div>
+            <!-- Upload Tab -->
+<section id="tab-upload" class="tab-content">
+    <div class="upload-container">
+        <div class="upload-area" id="uploadArea">
+            <div class="upload-icon">📤</div>
+            <h3>Glissez-déposez vos fichiers ici</h3>
+            <p>ou</p>
+            <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+                Parcourir les fichiers
+            </button>
+            <input type="file" id="fileInput" multiple accept=".pdf,.txt,.md,.markdown,.zip" style="display:none">
+            <div id="fileList" class="file-list"></div>
+        </div>
 
-                    <div class="upload-metadata">
-                        <h3>Metadata</h3>
-                        <form id="metadataForm">
-                            <div class="form-group">
-                                <label>Brand *</label>
-                                <input type="text" id="metaBrand" placeholder="e.g., OTIS, Hyundai" required>
-                            </div>
-                            <div class="form-group">
-                                <label>Elevator Model *</label>
-                                <input type="text" id="metaModel" placeholder="e.g., Gen2, NEXIEZ" required>
-                            </div>
-                            <div class="form-group">
-                                <label>Document Type</label>
-                                <select id="metaType">
-                                    <option value="maintenance_manual">Maintenance Manual</option>
-                                    <option value="installation_manual">Installation Manual</option>
-                                    <option value="troubleshooting_guide">Troubleshooting Guide</option>
-                                    <option value="user_manual">User Manual</option>
-                                    <option value="technical_spec">Technical Specification</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label>Document Version</label>
-                                <input type="text" id="metaVersion" placeholder="e.g., v1.0, 2026-01">
-                            </div>
-                            <div class="form-group">
-                                <label>Visibility</label>
-                                <select id="metaVisibility">
-                                    <option value="public">Public (Everyone)</option>
-                                    <option value="private">Private (Employees only)</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label>Options</label>
-                                <div class="checkbox-group">
-                                    <label>
-                                        <input type="checkbox" id="optSmartPDF" checked>
-                                        Smart PDF Processing
-                                    </label>
-                                    <label>
-                                        <input type="checkbox" id="optVisionLLM" checked>
-                                        Vision LLM (Image descriptions)
-                                    </label>
-                                    <label>
-                                        <input type="checkbox" id="optSkipEmbedding">
-                                        Test Mode (Skip Embeddings)
-                                    </label>
-                                </div>
-                            </div>
-                            <button type="submit" class="btn btn-success btn-block" id="uploadBtn">
-                                🚀 Upload & Process
-                            </button>
-                        </form>
-                    </div>
-
-                    <div class="upload-progress" id="uploadProgress" style="display:none;">
-                        <h3>Processing...</h3>
-                        <div class="progress-bar">
-                            <div class="progress-fill" id="progressFill" style="width:0%"></div>
-                        </div>
-                        <p id="progressMessage">Initializing...</p>
-                        <div id="taskStatus" class="task-status"></div>
+        <div class="upload-metadata">
+            <h3>📋 Métadonnées</h3>
+            <p style="color: #666; font-size: 0.85rem; margin-bottom: 16px;">
+                Les métadonnées seront détectées automatiquement à partir du nom du fichier.
+                Vous pouvez les ajuster manuellement si nécessaire.
+            </p>
+            
+            <form id="metadataForm">
+                <div class="form-group">
+                    <label>🏷️ Marque</label>
+                    <input type="text" id="metaBrand" placeholder="Détectée automatiquement..." readonly style="background: #f5f5f5;">
+                    <span style="font-size: 0.7rem; color: #999; display: block; margin-top: 4px;">
+                        Détectée depuis le nom du fichier
+                    </span>
+                </div>
+                <div class="form-group">
+                    <label>📦 Modèle d'ascenseur</label>
+                    <input type="text" id="metaModel" placeholder="Détecté automatiquement..." readonly style="background: #f5f5f5;">
+                    <span style="font-size: 0.7rem; color: #999; display: block; margin-top: 4px;">
+                        Détecté depuis le nom du fichier
+                    </span>
+                </div>
+                <div class="form-group">
+                    <label>📄 Type de document</label>
+                    <select id="metaType">
+                        <option value="maintenance_manual">Manuel de maintenance</option>
+                        <option value="installation_manual">Manuel d'installation</option>
+                        <option value="troubleshooting_guide">Guide de dépannage</option>
+                        <option value="user_manual">Manuel utilisateur</option>
+                        <option value="technical_spec">Spécification technique</option>
+                        <option value="training_document">Document de formation</option>
+                        <option value="other">Autre</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>📌 Version</label>
+                    <input type="text" id="metaVersion" placeholder="Détectée automatiquement..." readonly style="background: #f5f5f5;">
+                    <span style="font-size: 0.7rem; color: #999; display: block; margin-top: 4px;">
+                        Détectée depuis le nom du fichier
+                    </span>
+                </div>
+                <div class="form-group">
+                    <label>👁️ Visibilité</label>
+                    <select id="metaVisibility">
+                        <option value="public">Public (Tout le monde)</option>
+                        <option value="private">Privé (Employés uniquement)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>⚙️ Options avancées</label>
+                    <div class="checkbox-group">
+                        <label>
+                            <input type="checkbox" id="optSmartPDF" checked>
+                            📄 Smart PDF Processing (OCR + tableaux)
+                        </label>
+                        <label>
+                            <input type="checkbox" id="optVisionLLM" checked>
+                            🖼️ Vision LLM (description des images)
+                        </label>
+                        <label>
+                            <input type="checkbox" id="optSkipEmbedding">
+                            🧪 Mode Test (sans embeddings)
+                        </label>
                     </div>
                 </div>
-            </section>
+                <button type="submit" class="btn btn-success btn-block" id="uploadBtn">
+                    🚀 Upload & Traitement
+                </button>
+            </form>
+        </div>
+
+        <div class="upload-progress" id="uploadProgress" style="display:none;">
+            <h3>⏳ Traitement en cours...</h3>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill" style="width:0%"></div>
+            </div>
+            <p id="progressMessage">Initialisation...</p>
+            <div id="taskStatus" class="task-status"></div>
+        </div>
+    </div>
+</section>
 
             <!-- Documents Tab -->
             <section id="tab-documents" class="tab-content">

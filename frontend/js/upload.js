@@ -43,10 +43,124 @@ const uploadManager = {
                 file.name.endsWith('.markdown')) {
                 this.files.push(file);
             } else {
-                showToast(`File ${file.name} not supported`, 'warning');
+                showToast(`Fichier ${file.name} non supporté`, 'warning');
             }
         }
         this.renderFileList();
+        this.detectMetadata();
+    },
+
+    detectMetadata() {
+        if (this.files.length === 0) {
+            document.getElementById('metaBrand').value = '';
+            document.getElementById('metaModel').value = '';
+            document.getElementById('metaVersion').value = '';
+            return;
+        }
+
+        // Prendre le premier fichier pour la détection
+        const firstFile = this.files[0];
+        const fileName = firstFile.name;
+        
+        // Détection de la marque (brand)
+        const brandPatterns = [
+            { pattern: /otis/i, brand: 'OTIS' },
+            { pattern: /hyundai/i, brand: 'Hyundai' },
+            { pattern: /schindler/i, brand: 'Schindler' },
+            { pattern: /kone/i, brand: 'KONE' },
+            { pattern: /thyssen/i, brand: 'ThyssenKrupp' },
+            { pattern: /mitubishi/i, brand: 'Mitsubishi' },
+            { pattern: /toshiba/i, brand: 'Toshiba' },
+            { pattern: /fujitec/i, brand: 'Fujitec' },
+            { pattern: /hitachi/i, brand: 'Hitachi' },
+            { pattern: /spelev/i, brand: 'SPELEV' },
+            { pattern: /orona/i, brand: 'ORONA' },
+            { pattern: /savaria/i, brand: 'Savaria' },
+            { pattern: /garier/i, brand: 'Garier' }
+        ];
+        
+        let detectedBrand = '';
+        for (const bp of brandPatterns) {
+            if (bp.pattern.test(fileName)) {
+                detectedBrand = bp.brand;
+                break;
+            }
+        }
+        
+        if (!detectedBrand && this.files.length > 1) {
+            // Si plusieurs fichiers, essayer de détecter depuis le second
+            const secondFile = this.files[1];
+            if (secondFile) {
+                const secondName = secondFile.name;
+                for (const bp of brandPatterns) {
+                    if (bp.pattern.test(secondName)) {
+                        detectedBrand = bp.brand;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Détection du modèle
+        const modelPatterns = [
+            { pattern: /gen2/i, model: 'Gen2' },
+            { pattern: /gen3/i, model: 'Gen3' },
+            { pattern: /nexiez/i, model: 'NEXIEZ' },
+            { pattern: /lc[bc]ii/i, model: 'LCBII' },
+            { pattern: /2000/i, model: '2000' },
+            { pattern: /3000/i, model: '3000' },
+            { pattern: /up900/i, model: 'UP900' },
+            { pattern: /mrl/i, model: 'MRL' },
+            { pattern: /panoramic/i, model: 'Panoramique' },
+            { pattern: /hydraulic/i, model: 'Hydraulique' },
+            { pattern: /traction/i, model: 'Traction' }
+        ];
+        
+        let detectedModel = '';
+        for (const mp of modelPatterns) {
+            if (mp.pattern.test(fileName)) {
+                detectedModel = mp.model;
+                break;
+            }
+        }
+        
+        // Détection de la version
+        const versionPattern = /v?(\d+[\.\-_]\d+[\.\-_]?\d*)/i;
+        const versionMatch = fileName.match(versionPattern);
+        const detectedVersion = versionMatch ? versionMatch[1] : '';
+        
+        // Détection du type de document
+        const typePatterns = [
+            { pattern: /maintenance/i, type: 'maintenance_manual' },
+            { pattern: /install/i, type: 'installation_manual' },
+            { pattern: /troubleshoot|diagnostic/i, type: 'troubleshooting_guide' },
+            { pattern: /user|guide|manuel utilisateur/i, type: 'user_manual' },
+            { pattern: /spec|technical/i, type: 'technical_spec' },
+            { pattern: /training|formation/i, type: 'training_document' }
+        ];
+        
+        let detectedType = 'maintenance_manual';
+        for (const tp of typePatterns) {
+            if (tp.pattern.test(fileName)) {
+                detectedType = tp.type;
+                break;
+            }
+        }
+        
+        // Remplir les champs
+        document.getElementById('metaBrand').value = detectedBrand || 'Inconnue (à définir)';
+        document.getElementById('metaModel').value = detectedModel || 'Inconnu (à définir)';
+        document.getElementById('metaVersion').value = detectedVersion || 'Inconnue (à définir)';
+        document.getElementById('metaType').value = detectedType;
+        
+        // Afficher un résumé de la détection
+        if (detectedBrand || detectedModel || detectedVersion) {
+            const summary = [];
+            if (detectedBrand) summary.push(`Marque: ${detectedBrand}`);
+            if (detectedModel) summary.push(`Modèle: ${detectedModel}`);
+            if (detectedVersion) summary.push(`Version: ${detectedVersion}`);
+            showToast(`📋 Métadonnées détectées: ${summary.join(' | ')}`, 'info', 5000);
+        }
     },
 
     renderFileList() {
@@ -69,13 +183,14 @@ const uploadManager = {
                 const index = parseInt(e.target.dataset.index);
                 this.files.splice(index, 1);
                 this.renderFileList();
+                this.detectMetadata();
             });
         });
     },
 
     async uploadFiles() {
         if (this.files.length === 0) {
-            showToast('Please select files to upload', 'warning');
+            showToast('Veuillez sélectionner des fichiers', 'warning');
             return;
         }
 
@@ -86,11 +201,20 @@ const uploadManager = {
             formData.append('files', file);
         }
 
-        // Add metadata
-        formData.append('brand', document.getElementById('metaBrand').value);
-        formData.append('elevator_model', document.getElementById('metaModel').value);
+        // Add metadata - maintenant automatique
+        let brand = document.getElementById('metaBrand').value;
+        let model = document.getElementById('metaModel').value;
+        let version = document.getElementById('metaVersion').value;
+        
+        // Si "Inconnue (à définir)" est détecté, utiliser "unknown"
+        if (brand === 'Inconnue (à définir)' || !brand) brand = 'unknown';
+        if (model === 'Inconnu (à définir)' || !model) model = 'unknown';
+        if (version === 'Inconnue (à définir)' || !version) version = 'unknown';
+        
+        formData.append('brand', brand);
+        formData.append('elevator_model', model);
         formData.append('document_type', document.getElementById('metaType').value);
-        formData.append('document_version', document.getElementById('metaVersion').value || 'unknown');
+        formData.append('document_version', version);
         formData.append('visibility', document.getElementById('metaVisibility').value);
         formData.append('use_smart_pdf', document.getElementById('optSmartPDF').checked);
         formData.append('use_vision_llm', document.getElementById('optVisionLLM').checked);
@@ -105,13 +229,13 @@ const uploadManager = {
             const result = await api.upload(formData);
             this.currentTaskId = result.task_id;
             
-            showToast(`Upload started: ${result.files_count} files`, 'success');
+            showToast(`Upload démarré: ${result.files_count} fichiers`, 'success');
             
             // Start polling
             this.pollTask(result.task_id);
             
         } catch (error) {
-            showToast(`Upload failed: ${error.message}`, 'error');
+            showToast(`Upload échoué: ${error.message}`, 'error');
             progressDiv.style.display = 'none';
             document.getElementById('uploadBtn').disabled = false;
         }
@@ -127,7 +251,7 @@ const uploadManager = {
                 this.onTaskComplete(status);
             },
             (error) => {
-                showToast(`Task failed: ${error}`, 'error');
+                showToast(`Tâche échouée: ${error}`, 'error');
                 document.getElementById('uploadBtn').disabled = false;
                 document.getElementById('uploadProgress').style.display = 'none';
             }
@@ -141,12 +265,12 @@ const uploadManager = {
         const percent = Math.round((progress / total) * 100);
         
         document.getElementById('progressFill').style.width = `${percent}%`;
-        document.getElementById('progressMessage').textContent = status.message || 'Processing...';
+        document.getElementById('progressMessage').textContent = status.message || 'Traitement en cours...';
         
         const statusDiv = document.getElementById('taskStatus');
         statusDiv.innerHTML = `
-            <div>Status: ${status.status}</div>
-            <div>Progress: ${progress}/${total}</div>
+            <div>Statut: ${status.status}</div>
+            <div>Progression: ${progress}/${total}</div>
             <div>Mode: ${status.mode || 'production'}</div>
         `;
     },
@@ -154,13 +278,13 @@ const uploadManager = {
     onTaskComplete(status) {
         const progressDiv = document.getElementById('uploadProgress');
         progressDiv.querySelector('.progress-fill').style.width = '100%';
-        document.getElementById('progressMessage').textContent = status.message || 'Complete!';
+        document.getElementById('progressMessage').textContent = status.message || 'Terminé !';
         
         const statusDiv = document.getElementById('taskStatus');
         statusDiv.innerHTML = `
             <div style="color: #4CAF50;">✅ ${status.message}</div>
             <div>Chunks: ${status.chunks_count || status.chunks_inserted || 0}</div>
-            ${status.chunks_file ? `<div>File: ${status.chunks_file}</div>` : ''}
+            ${status.chunks_file ? `<div>Fichier: ${status.chunks_file}</div>` : ''}
         `;
         
         document.getElementById('uploadBtn').disabled = false;
