@@ -14,31 +14,14 @@ async def retrive(
 ) -> List[Dict[str, Any]]:
     """
     Recherche les chunks pertinents avec filtrage par rôle
-    
-    Args:
-        db_con: Connexion PostgreSQL
-        embedding: Embedding de la question
-        top_k: Nombre de résultats
-        role: Rôle de l'utilisateur ('admin', 'employee', 'public')
-        boost_high_feedback: Booster les chunks avec feedback positif
     """
     top_k = top_k if top_k is not None else settings.top_k
     
-    # Construire la requête avec filtrage par visibilité
-    # Les admins et employés voient tout, le public voit seulement 'public'
     visibility_filter = ""
     if role == "public":
         visibility_filter = "AND (metadata->>'visibility' = 'public' OR metadata->>'visibility' IS NULL)"
     
-    # Si on booste le feedback, modifier la clause ORDER BY
-    order_clause = "ORDER BY similarity DESC"
-    if boost_high_feedback:
-        # Feedback score: 0-5, on ajoute un petit boost pour les documents bien notés
-        # Un feedback de 5 ajoute 0.2 à la similarité
-        order_clause = """
-            ORDER BY similarity + (COALESCE(feedback_score, 0) / 25.0) DESC
-        """
-    
+    # Construire la requête correctement
     query = f"""
         SELECT  
             content,
@@ -49,7 +32,7 @@ async def retrive(
         FROM documents
         WHERE 1 - (embedding <=> $1::vector) >= $2
         {visibility_filter}
-        {order_clause}
+        ORDER BY similarity DESC
         LIMIT $3
     """
     
@@ -63,12 +46,13 @@ async def retrive(
         
         results = []
         for row in rows:
-            row = dict(row)
-            row["metadata"] = json.loads(row["metadata"])
-            # Ajouter les métadonnées de feedback
-            row["feedback_score"] = float(row.get("feedback_score") or 0)
-            row["feedback_count"] = int(row.get("feedback_count") or 0)
-            results.append(row)
+            results.append({
+                "content": row["content"],
+                "metadata": json.loads(row["metadata"]),
+                "similarity": float(row["similarity"]),
+                "feedback_score": float(row.get("feedback_score") or 0),
+                "feedback_count": int(row.get("feedback_count") or 0)
+            })
         
         logger.debug(f"Recherche terminée: {len(results)} résultats pour le rôle {role}")
         return results
@@ -83,9 +67,7 @@ async def update_feedback_score(
     document_id: int,
     score: int
 ) -> None:
-    """
-    Met à jour le feedback score d'un document
-    """
+    """Met à jour le feedback score d'un document"""
     if score < 1 or score > 5:
         raise ValueError("Score must be between 1 and 5")
     
@@ -107,9 +89,7 @@ async def get_top_documents_by_feedback(
     limit: int = 10,
     min_feedback: int = 3
 ) -> List[Dict[str, Any]]:
-    """
-    Récupère les documents les mieux notés
-    """
+    """Récupère les documents les mieux notés"""
     rows = await db_con.fetch(
         """
         SELECT 
