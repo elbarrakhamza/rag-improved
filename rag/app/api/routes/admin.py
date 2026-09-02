@@ -1,5 +1,4 @@
 import asyncio
-from importlib.metadata import metadata
 import json
 import uuid
 

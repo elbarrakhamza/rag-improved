@@ -46,11 +46,17 @@ async def save_chunks_to_task(task_id: str, chunks: List[Dict[str, Any]]):
 
 
 async def generate_chunks_for_task(files: List[str], metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Génère les chunks à partir des fichiers."""
     all_chunks = []
+    # Vérifier que metadata est un dictionnaire
+    if not isinstance(metadata, dict):
+        logger.error(f"❌ metadata n'est pas un dictionnaire: {type(metadata)}")
+        metadata = dict(metadata) if hasattr(metadata, '__dict__') else {}
+    
     for file_path in files:
         job = IngestionJob(
             path=Path(file_path),
-            metadata=metadata.copy()
+            metadata=metadata.copy()  # metadata est maintenant un dict
         )
         job.metadata["language"] = "english"
         job.metadata["embedding_model"] = settings.embedding_model
@@ -99,6 +105,16 @@ async def run_embedding_phase(task_id: str, chunks: List[Dict[str, Any]], metada
 
 async def start_ingestion_task(task_id: str, files: List[str], metadata: Dict[str, Any], mode: str):
     try:
+        logger.info(f"🚀 Démarrage de la tâche {task_id}, mode: {mode}")
+        logger.debug(f"📦 metadata reçu: {metadata} (type: {type(metadata)})")
+        
+        # Vérifier que metadata est un dictionnaire
+        if not isinstance(metadata, dict):
+            logger.error(f"❌ metadata n'est pas un dictionnaire: {type(metadata)}")
+            metadata = dict(metadata) if hasattr(metadata, '__dict__') else {}
+            await update_task_status(task_id, "FAILED", error="metadata must be a dictionary")
+            return
+        
         await update_task_status(task_id, "GENERATING_CHUNKS", message="Extraction des chunks en cours")
         chunks = await generate_chunks_for_task(files, metadata)
         await save_chunks_to_task(task_id, chunks)
