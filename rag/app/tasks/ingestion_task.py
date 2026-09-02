@@ -77,6 +77,12 @@ async def generate_chunks_for_task(files: List[str], metadata: Dict[str, Any]) -
 
 async def run_embedding_phase(task_id: str, chunks: List[Dict[str, Any]], metadata: Dict[str, Any]):
     try:
+        # Si chunks est une chaîne JSON, la parser
+        if isinstance(chunks, str):
+            chunks = json.loads(chunks)
+        if not isinstance(chunks, list):
+            raise ValueError("Chunks must be a list")
+
         if metadata.get("skip_embedding", False):
             await update_task_status(task_id, "COMPLETED", message="Embedding skipped (test mode)")
             return

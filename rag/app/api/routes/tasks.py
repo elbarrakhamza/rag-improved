@@ -125,6 +125,14 @@ async def validate_task(
             detail=f"Task cannot be validated in current status: {status}"
         )
 
+    # Parser les chunks si nécessaire
+    chunks = row["chunks"]
+    if isinstance(chunks, str):
+        chunks = json.loads(chunks)
+    metadata = row["metadata"]
+    if isinstance(metadata, str):
+        metadata = json.loads(metadata)
+
     await db_connection.execute(
         """
         UPDATE ingestion_tasks
@@ -136,7 +144,7 @@ async def validate_task(
 
     from app.tasks.ingestion_task import run_embedding_phase
     import asyncio
-    asyncio.create_task(run_embedding_phase(task_id, row["chunks"], row["metadata"]))
+    asyncio.create_task(run_embedding_phase(task_id, chunks, metadata))
 
     return {"status": "success", "message": "Embedding started"}
 
