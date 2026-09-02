@@ -50,11 +50,15 @@ async def query(
             
             logger.info(f"Question reçue de {role}: {question[:100]}...")
             
-            # 1. Vérifier le cache - d'abord public puis rôle
+            # 1. Vérifier le cache - selon le rôle
             cached_answer = None
             if use_cache:
-                # On ne sait pas encore si le document est public, on vérifie d'abord
-                cached_answer = embedding_cache.get_answer(question, role=role, is_public_doc=True)
+                if role == "public":
+                    # Pour le public, on peut utiliser le cache public (partagé)
+                    cached_answer = embedding_cache.get_answer(question, role=role, is_public_doc=True)
+                else:
+                    # Pour admin/employee, on utilise seulement leur cache personnel (pas le cache public)
+                    cached_answer = embedding_cache.get_answer(question, role=role, is_public_doc=False)
             
             if cached_answer:
                 logger.info(f"Réponse en cache pour: {question[:50]}... (rôle={role}, type={cached_answer.get('cache_type', 'unknown')})")
@@ -91,7 +95,7 @@ async def query(
             
             logger.info(f"{len(retrieved_chunks)} chunks récupérés")
             
-            # 4. Vérifier si les résultats sont tous publics
+            # 4. Vérifier si les résultats sont tous publics (pour le cache)
             is_public_doc = True
             for chunk in retrieved_chunks:
                 visibility = chunk.get("metadata", {}).get("visibility", "public")
@@ -106,17 +110,20 @@ async def query(
             )
             response = await generate(prompt)
             
-            # 6. Mettre en cache la réponse (avec stockage public si applicable)
-            if use_cache:
+            # 6. Mettre en cache la réponse (uniquement si ce n'est pas "Information not found")
+            if use_cache and response and response[0] != "Information not found":
+                # Si le rôle est public, on stocke dans le cache public et le cache du rôle
+                # Sinon (admin/employee), on stocke seulement dans le cache du rôle
+                cache_public = (role == "public") or is_public_doc
                 embedding_cache.set_answer(
                     question, 
                     response[0], 
                     response[1],
                     role=role,
                     sources=[],
-                    is_public_doc=is_public_doc
+                    is_public_doc=cache_public
                 )
-                logger.info(f"Réponse mise en cache (public={is_public_doc}, rôle={role})")
+                logger.info(f"Réponse mise en cache (public={cache_public}, rôle={role})")
             
             # 7. Enregistrer la question pour analyse
             await feedback_analyzer.record_question_pattern(db_connection, question)
