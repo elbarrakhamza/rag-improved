@@ -146,6 +146,10 @@ async retryTask(taskId) {
     });
 },
 
+async getTaskStatus(taskId) {
+    return this.request(`/tasks/${taskId}`);
+},
+
     // Admin: Documents
     async getDocuments(page = 1, limit = 50, search = '') {
         const params = new URLSearchParams({ page, limit });
