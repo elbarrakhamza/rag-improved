@@ -19,56 +19,90 @@ const documentsManager = {
     },
 
     async loadDocuments() {
-        const container = document.getElementById('documentsList');
-        container.innerHTML = '<p class="loading-text">Loading documents...</p>';
-        
-        try {
-            const data = await api.getDocuments(this.currentPage, 50, this.searchTerm);
-            
-            if (data.documents.length === 0) {
-                container.innerHTML = '<p class="loading-text">No documents found</p>';
-                return;
-            }
-            
-            container.innerHTML = data.documents.map(doc => `
-                <div class="doc-item">
-                    <div class="doc-info">
-                        <div class="doc-name">${doc.source_file}</div>
-                        <div class="doc-meta">
-                            <span>🏷️ ${doc.brand || 'N/A'}</span>
-                            <span>📦 ${doc.model || 'N/A'}</span>
-                            <span>📄 ${doc.type || 'N/A'}</span>
-                            <span>📌 ${doc.version || 'N/A'}</span>
-                            <span class="visibility-tag ${doc.visibility === 'private' ? 'private' : 'public'}">
-                                ${doc.visibility || 'public'}
-                            </span>
-                        </div>
-                    </div>
-                    <div class="doc-actions">
-                        <button class="btn btn-danger" data-file="${doc.source_file}">🗑️ Delete</button>
+    const container = document.getElementById('documentsList');
+    container.innerHTML = '<p class="loading-text">Loading documents...</p>';
+
+    try {
+        const data = await api.getDocuments(this.currentPage, 50, this.searchTerm);
+
+        if (data.documents.length === 0) {
+            container.innerHTML = '<p class="loading-text">No documents found</p>';
+            return;
+        }
+
+        container.innerHTML = data.documents.map(doc => `
+            <div class="doc-item">
+                <div class="doc-info">
+                    <div class="doc-name">${doc.source_file}</div>
+                    <div class="doc-meta">
+                        <span>🏷️ ${doc.brand || 'N/A'}</span>
+                        <span>📦 ${doc.model || 'N/A'}</span>
+                        <span>📄 ${doc.type || 'N/A'}</span>
+                        <span>📌 ${doc.version || 'N/A'}</span>
+                        <span class="visibility-tag ${doc.visibility === 'private' ? 'private' : 'public'}">
+                            ${doc.visibility || 'public'}
+                        </span>
                     </div>
                 </div>
-            `).join('');
+                <div class="doc-actions">
+                    <button class="btn btn-secondary toggle-visibility" 
+                            data-file="${doc.source_file}" 
+                            data-vis="${doc.visibility || 'public'}">
+                        🔄 ${doc.visibility === 'private' ? 'Rendre public' : 'Rendre privé'}
+                    </button>
+                    <button class="btn btn-danger delete-doc" 
+                            data-file="${doc.source_file}">
+                        🗑️ Supprimer
+                    </button>
+                </div>
+            </div>
+        `).join('');
 
-            // Delete handlers
-            container.querySelectorAll('[data-file]').forEach(el => {
-                el.addEventListener('click', async (e) => {
-                    const file = e.target.dataset.file;
-                    if (confirm(`Delete "${file}"?`)) {
-                        await this.deleteDocument(file);
+        // ============================================================
+        // 🔽 GESTIONNAIRES D'ÉVÉNEMENTS
+        // ============================================================
+
+        // 1. TOGGLE DE VISIBILITÉ (bouton .toggle-visibility)
+        container.querySelectorAll('.toggle-visibility').forEach(el => {
+            el.addEventListener('click', async (e) => {
+                const file = e.target.dataset.file;
+                const currentVis = e.target.dataset.vis;
+                const newVis = currentVis === 'public' ? 'private' : 'public';
+                if (confirm(`Changer la visibilité de "${file}" en ${newVis} ?`)) {
+                    try {
+                        await api.updateDocumentVisibility(file, newVis);
+                        showToast(`Visibilité de "${file}" mise à jour en ${newVis}`, 'success');
+                        this.loadDocuments(); // rafraîchir la liste
+                    } catch (error) {
+                        showToast(`Erreur: ${error.message}`, 'error');
                     }
-                });
+                }
             });
+        });
 
-            // Pagination
-            const total = data.total || 0;
-            this.totalPages = Math.ceil(total / 50);
-            this.renderPagination();
-            
-        } catch (error) {
-            container.innerHTML = `<p class="loading-text">Error loading documents: ${error.message}</p>`;
-        }
-    },
+        // 2. SUPPRESSION (bouton .delete-doc)
+        container.querySelectorAll('.delete-doc').forEach(el => {
+            el.addEventListener('click', async (e) => {
+                const file = e.target.dataset.file;
+                if (confirm(`Supprimer "${file}" ?`)) {
+                    await this.deleteDocument(file);
+                }
+            });
+        });
+
+        // ============================================================
+        // 🔼 FIN DES GESTIONNAIRES
+        // ============================================================
+
+        // Pagination
+        const total = data.total || 0;
+        this.totalPages = Math.ceil(total / 50);
+        this.renderPagination();
+
+    } catch (error) {
+        container.innerHTML = `<p class="loading-text">Error loading documents: ${error.message}</p>`;
+    }
+},
 
     renderPagination() {
         const container = document.getElementById('docPagination');

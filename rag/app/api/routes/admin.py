@@ -365,3 +365,47 @@ async def mark_all_notifications_read(
             user_id,
         )
     return {"status": "success"}
+
+@router.patch("/documents/{source_file}/visibility")
+async def update_document_visibility(
+    source_file: str,
+    request: Request,
+    visibility: str = Form(...),  # 'public' ou 'private'
+    key_info: dict = Depends(get_admin_api_key)
+):
+    """
+    Change la visibilité d'un document (public/private).
+    """
+    import urllib.parse
+    pool = request.app.state.pool
+    decoded_source = urllib.parse.unquote(source_file)
+    
+    if visibility not in ["public", "private"]:
+        raise HTTPException(status_code=400, detail="Visibility must be 'public' or 'private'")
+    
+    async with pool.acquire() as conn:
+        # Vérifier si le document existe
+        exists = await conn.fetchval(
+            "SELECT EXISTS(SELECT 1 FROM documents WHERE metadata->>'source_file' = $1)",
+            decoded_source
+        )
+        if not exists:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        # Mettre à jour la visibilité dans metadata
+        await conn.execute(
+            """
+            UPDATE documents
+            SET metadata = jsonb_set(metadata, '{visibility}', $1::jsonb)
+            WHERE metadata->>'source_file' = $2
+            """,
+            f'"{visibility}"',
+            decoded_source
+        )
+    
+    return {
+        "status": "success",
+        "source_file": decoded_source,
+        "visibility": visibility,
+        "message": f"Visibility updated to {visibility}"
+    }

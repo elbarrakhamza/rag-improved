@@ -222,6 +222,18 @@ async markAllNotificationsRead() {
     });
 },
 
+async updateDocumentVisibility(sourceFile, visibility) {
+    const formData = new URLSearchParams();
+    formData.append('visibility', visibility);
+    return this.request(`/admin/documents/${encodeURIComponent(sourceFile)}/visibility`, {
+        method: 'PATCH',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: formData.toString()
+    });
+},
+
     // Feedback
     async submitFeedback(data) {
         return this.request('/feedback/submit', {
