@@ -108,53 +108,43 @@ const api = {
 
     // ===== TASKS =====
     // Liste des tâches
-    async getTasks(limit = 20, offset = 0) {
-        return this.request(`/tasks?limit=${limit}&offset=${offset}`);
-    },
+    // Admin: Tasks
+async getTasks(limit = 20, offset = 0) {
+    return this.request(`/tasks/?limit=${limit}&offset=${offset}`); // ← slash après tasks
+},
 
-    // Détails d'une tâche
-    async getTask(taskId) {
-        return this.request(`/tasks/${taskId}`);
-    },
+async getTask(taskId) {
+    return this.request(`/tasks/${taskId}`); // celui-ci devrait déjà fonctionner car il inclut un paramètre
+},
 
-    // Statut d'une tâche (utilisé par le poller)
-    async getTaskStatus(taskId) {
-        return this.request(`/tasks/${taskId}`);
-    },
+async getTaskChunks(taskId) {
+    return this.request(`/tasks/${taskId}/chunks`);
+},
 
-    // Récupérer les chunks d'une tâche
-    async getTaskChunks(taskId) {
-        return this.request(`/tasks/${taskId}/chunks`);
-    },
+async updateTaskChunks(taskId, chunks) {
+    return this.request(`/tasks/${taskId}/chunks`, {
+        method: 'PUT',
+        body: JSON.stringify(chunks)
+    });
+},
 
-    // Mettre à jour les chunks
-    async updateTaskChunks(taskId, chunks) {
-        return this.request(`/tasks/${taskId}/chunks`, {
-            method: 'PUT',
-            body: JSON.stringify(chunks)
-        });
-    },
+async validateTask(taskId) {
+    return this.request(`/tasks/${taskId}/validate`, {
+        method: 'POST'
+    });
+},
 
-    // Valider une tâche (lancer embedding)
-    async validateTask(taskId) {
-        return this.request(`/tasks/${taskId}/validate`, {
-            method: 'POST'
-        });
-    },
+async cancelTask(taskId) {
+    return this.request(`/tasks/${taskId}/cancel`, {
+        method: 'POST'
+    });
+},
 
-    // Annuler une tâche
-    async cancelTask(taskId) {
-        return this.request(`/tasks/${taskId}/cancel`, {
-            method: 'POST'
-        });
-    },
-
-    // Relancer une tâche
-    async retryTask(taskId) {
-        return this.request(`/tasks/${taskId}/retry`, {
-            method: 'POST'
-        });
-    },
+async retryTask(taskId) {
+    return this.request(`/tasks/${taskId}/retry`, {
+        method: 'POST'
+    });
+},
 
     // Admin: Documents
     async getDocuments(page = 1, limit = 50, search = '') {
