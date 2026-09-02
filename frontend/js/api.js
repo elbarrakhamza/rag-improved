@@ -205,6 +205,23 @@ async getTaskStatus(taskId) {
         });
     },
 
+    // Admin: Notifications
+async getNotifications(limit = 20, offset = 0) {
+    return this.request(`/admin/notifications?limit=${limit}&offset=${offset}`);
+},
+
+async markNotificationRead(id) {
+    return this.request(`/admin/notifications/${id}/read`, {
+        method: 'POST'
+    });
+},
+
+async markAllNotificationsRead() {
+    return this.request('/admin/notifications/read-all', {
+        method: 'POST'
+    });
+},
+
     // Feedback
     async submitFeedback(data) {
         return this.request('/feedback/submit', {

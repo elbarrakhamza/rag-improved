@@ -45,6 +45,15 @@ class Settings(BaseSettings):
     enable_feedback: bool = True
     feedback_min_entries_for_reranking: int = 10
 
+    # Email
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    admin_email: str = ""
+    enable_email_notifications: bool = True
+
     class Config:
         env_file = "../.env"
 

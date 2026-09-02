@@ -98,9 +98,18 @@
                 </div>
                 <div class="header-right">
                     <div class="notification-bell" id="notificationBell">
-                        <span class="bell-icon">🔔</span>
-                        <span class="badge" id="notificationBadge">0</span>
-                    </div>
+    <span class="bell-icon">🔔</span>
+    <span class="badge" id="notificationBadge">0</span>
+    <div class="notification-dropdown" id="notificationDropdown" style="display:none;">
+        <div class="dropdown-header">
+            <span>Notifications</span>
+            <button id="markAllReadBtn">Tout marquer comme lu</button>
+        </div>
+        <div id="notificationList" class="dropdown-list">
+            <p class="empty">Aucune notification</p>
+        </div>
+    </div>
+</div>
                     <div class="user-info">
                         <span class="user-avatar">👤</span>
                         <span class="user-role" id="userRole">Admin</span>

@@ -7,6 +7,7 @@ import os
 import shutil
 import hashlib
 import secrets
+import urllib.parse
 from pathlib import Path
 from typing import List, Optional
 
@@ -41,10 +42,6 @@ async def upload_documents(
     mode: str = Form("auto"),
     key_info: dict = Depends(get_admin_api_key),
 ):
-    """
-    Upload de documents pour ingestion.
-    mode : 'auto' (tout enchaîné) ou 'manual' (génération des chunks seulement)
-    """
     try:
         temp_dir = tempfile.mkdtemp()
         uploaded_files = []
@@ -70,7 +67,6 @@ async def upload_documents(
         if not uploaded_files:
             raise HTTPException(status_code=400, detail="No supported files found (PDF, TXT, MD)")
 
-        # Dictionnaire de métadonnées
         metadata = {
             "brand": brand,
             "elevator_model": elevator_model,
@@ -84,22 +80,24 @@ async def upload_documents(
         }
 
         task_id = str(uuid.uuid4())
+        admin_id = key_info.get("api_key_id")  # Récupéré depuis la clé admin
 
-        # Insérer la tâche en base de données
         async with request.app.state.pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO ingestion_tasks (id, status, files, metadata, options, created_at, updated_at)
-                VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+                INSERT INTO ingestion_tasks (
+                    id, status, files, metadata, options, admin_id, created_at, updated_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
                 """,
                 task_id,
                 "UPLOADED",
                 json.dumps(uploaded_files),
                 json.dumps(metadata),
                 json.dumps({"mode": mode}),
+                admin_id,
             )
 
-        # Lancer l'ingestion en arrière‑plan avec une référence persistante
+        # Lancer l'ingestion en arrière‑plan
         task = asyncio.create_task(
             start_ingestion_task(task_id, uploaded_files, metadata, mode)
         )
@@ -125,7 +123,6 @@ async def get_task_status(
     request: Request,
     key_info: dict = Depends(get_admin_api_key),
 ):
-    """Récupère le statut d'une tâche d'ingestion."""
     from app.tasks.ingestion_task import get_task_status_async
     status = await get_task_status_async(task_id)
     if status.get("status") == "not_found":
@@ -133,28 +130,19 @@ async def get_task_status(
     return status
 
 
+# ---- API Keys ----
 @router.post("/api-keys/generate")
 async def generate_api_key(
     request: Request,
     role: str = Form("public"),
     user_id: Optional[int] = Form(None),
     description: Optional[str] = Form(None),
-    key_info: dict = Depends(get_admin_api_key)
+    key_info: dict = Depends(get_admin_api_key),
 ):
-    """
-    Génère une nouvelle clé API avec un rôle spécifique
-    """
     if role not in ["admin", "employee", "public"]:
-        raise HTTPException(
-            status_code=400,
-            detail="Role must be 'admin', 'employee', or 'public'"
-        )
-    
-    # Générer une clé aléatoire
-    import secrets
+        raise HTTPException(status_code=400, detail="Role must be 'admin', 'employee', or 'public'")
     api_key = secrets.token_urlsafe(32)
     key_hash = hashlib.sha256(api_key.encode()).hexdigest()
-    
     pool = request.app.state.pool
     async with pool.acquire() as conn:
         await conn.execute(
@@ -165,45 +153,31 @@ async def generate_api_key(
             key_hash,
             role,
             user_id,
-            description
+            description,
         )
-    
-    # Vider le cache des clés
     clear_api_key_cache()
-    
     return {
         "api_key": api_key,
         "role": role,
         "description": description,
-        "message": "Clé API générée avec succès. Conservez-la précieusement."
+        "message": "Clé API générée avec succès. Conservez-la précieusement.",
     }
 
 
 @router.get("/api-keys")
 async def list_api_keys(
     request: Request,
-    key_info: dict = Depends(get_admin_api_key)
+    key_info: dict = Depends(get_admin_api_key),
 ):
-    """
-    Liste toutes les clés API
-    """
     pool = request.app.state.pool
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT 
-                id,
-                role,
-                user_id,
-                description,
-                is_active,
-                created_at,
-                last_used
+            SELECT id, role, user_id, description, is_active, created_at, last_used
             FROM api_keys
             ORDER BY created_at DESC
             """
         )
-    
     return [dict(row) for row in rows]
 
 
@@ -211,93 +185,62 @@ async def list_api_keys(
 async def toggle_api_key(
     key_id: int,
     request: Request,
-    key_info: dict = Depends(get_admin_api_key)
+    key_info: dict = Depends(get_admin_api_key),
 ):
-    """
-    Active ou désactive une clé API
-    """
     pool = request.app.state.pool
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "SELECT is_active FROM api_keys WHERE id = $1",
-            key_id
-        )
-        
+        row = await conn.fetchrow("SELECT is_active FROM api_keys WHERE id = $1", key_id)
         if not row:
             raise HTTPException(status_code=404, detail="API key not found")
-        
         new_status = not row["is_active"]
-        await conn.execute(
-            "UPDATE api_keys SET is_active = $1 WHERE id = $2",
-            new_status,
-            key_id
-        )
-    
+        await conn.execute("UPDATE api_keys SET is_active = $1 WHERE id = $2", new_status, key_id)
     clear_api_key_cache()
-    
-    return {
-        "status": "success",
-        "key_id": key_id,
-        "is_active": new_status
-    }
+    return {"status": "success", "key_id": key_id, "is_active": new_status}
 
 
 @router.delete("/api-keys/{key_id}")
 async def delete_api_key(
     key_id: int,
     request: Request,
-    key_info: dict = Depends(get_admin_api_key)
+    key_info: dict = Depends(get_admin_api_key),
 ):
-    """
-    Supprime une clé API
-    """
     pool = request.app.state.pool
     async with pool.acquire() as conn:
-        result = await conn.execute(
-            "DELETE FROM api_keys WHERE id = $1",
-            key_id
-        )
-        
+        result = await conn.execute("DELETE FROM api_keys WHERE id = $1", key_id)
         if result == "DELETE 0":
             raise HTTPException(status_code=404, detail="API key not found")
-    
     clear_api_key_cache()
-    
-    return {
-        "status": "success",
-        "message": "API key deleted"
-    }
+    return {"status": "success", "message": "API key deleted"}
 
 
+# ---- Cache ----
 @router.get("/cache/stats")
 async def cache_stats(key_info: dict = Depends(get_admin_api_key)):
-    """Statistiques du cache d'embeddings"""
     return embedding_cache.get_stats()
 
 
 @router.delete("/cache/clear")
 async def clear_cache(key_info: dict = Depends(get_admin_api_key)):
-    """Vider le cache d'embeddings"""
     if embedding_cache.clear_cache():
         return {"status": "success", "message": "Cache cleared"}
     else:
         raise HTTPException(status_code=500, detail="Failed to clear cache")
 
 
+# ---- Documents ----
 @router.get("/documents")
 async def list_documents(
     request: Request,
     page: int = 1,
     limit: int = 50,
-    key_info: dict = Depends(get_admin_api_key)
+    key_info: dict = Depends(get_admin_api_key),
 ):
-    """Liste des documents indexés"""
     pool = request.app.state.pool
     async with pool.acquire() as conn:
         offset = (page - 1) * limit
         rows = await conn.fetch(
             """
-            SELECT DISTINCT 
+            SELECT DISTINCT
                 metadata->>'source_file' as source_file,
                 metadata->>'brand' as brand,
                 metadata->>'elevator_model' as model,
@@ -309,49 +252,116 @@ async def list_documents(
             ORDER BY source_file
             LIMIT $1 OFFSET $2
             """,
-            limit, offset
+            limit,
+            offset,
         )
-        
         results = []
         total = 0
         for row in rows:
-            total = row['total_count']
+            total = row["total_count"]
             results.append({
-                "source_file": row['source_file'],
-                "brand": row['brand'],
-                "model": row['model'],
-                "type": row['type'],
-                "version": row['version'],
-                "visibility": row['visibility']
+                "source_file": row["source_file"],
+                "brand": row["brand"],
+                "model": row["model"],
+                "type": row["type"],
+                "version": row["version"],
+                "visibility": row["visibility"],
             })
-        
-        return {
-            "documents": results,
-            "total": total,
-            "page": page,
-            "limit": limit
-        }
+        return {"documents": results, "total": total, "page": page, "limit": limit}
 
 
 @router.delete("/documents/{source_file}")
 async def delete_document(
     source_file: str,
     request: Request,
-    key_info: dict = Depends(get_admin_api_key)
+    key_info: dict = Depends(get_admin_api_key),
 ):
-    """Supprime un document et ses chunks"""
-    import urllib.parse
-    
     pool = request.app.state.pool
     async with pool.acquire() as conn:
         decoded_source = urllib.parse.unquote(source_file)
-        
         result = await conn.execute(
             "DELETE FROM documents WHERE metadata->>'source_file' = $1",
-            decoded_source
+            decoded_source,
         )
-        
         if result == "DELETE 0":
             raise HTTPException(status_code=404, detail="Document not found")
-        
         return {"status": "success", "message": f"Document {decoded_source} deleted"}
+
+
+# ---- Notifications ----
+@router.get("/notifications")
+async def get_notifications(
+    request: Request,
+    key_info: dict = Depends(get_admin_api_key),
+    limit: int = 20,
+    offset: int = 0,
+):
+    user_id = key_info.get("api_key_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    pool = request.app.state.pool
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, task_id, title, message, type, is_read, created_at
+            FROM notifications
+            WHERE user_id = $1
+            ORDER BY created_at DESC
+            LIMIT $2 OFFSET $3
+            """,
+            user_id,
+            limit,
+            offset,
+        )
+        unread_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND is_read = FALSE",
+            user_id,
+        )
+    return {
+        "notifications": [dict(row) for row in rows],
+        "unread_count": unread_count or 0,
+    }
+
+
+@router.post("/notifications/{notification_id}/read")
+async def mark_notification_read(
+    notification_id: int,
+    request: Request,
+    key_info: dict = Depends(get_admin_api_key),
+):
+    user_id = key_info.get("api_key_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    pool = request.app.state.pool
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            """
+            UPDATE notifications SET is_read = TRUE
+            WHERE id = $1 AND user_id = $2
+            """,
+            notification_id,
+            user_id,
+        )
+        if result == "UPDATE 0":
+            raise HTTPException(status_code=404, detail="Notification not found")
+    return {"status": "success"}
+
+
+@router.post("/notifications/read-all")
+async def mark_all_notifications_read(
+    request: Request,
+    key_info: dict = Depends(get_admin_api_key),
+):
+    user_id = key_info.get("api_key_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    pool = request.app.state.pool
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE notifications SET is_read = TRUE WHERE user_id = $1",
+            user_id,
+        )
+    return {"status": "success"}

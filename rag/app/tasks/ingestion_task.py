@@ -3,11 +3,11 @@ import json
 import sys
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-
 from loguru import logger
 
 from app.core.config import settings
 from app.database.postgres_connection import get_pool
+from app.service.notifications import notify_admin
 
 sys.path.append("/app/data")
 
@@ -35,7 +35,7 @@ async def update_task_status(
 ):
     """
     Met à jour le statut d'une tâche dans PostgreSQL.
-    Cette fonction est asynchrone et ne bloque pas FastAPI.
+    Envoie une notification à l'admin (web + email) après la mise à jour.
     """
     try:
         pool = await get_pool()
@@ -53,8 +53,20 @@ async def update_task_status(
                 error,
                 task_id,
             )
+            # Récupérer l'admin_id pour la notification
+            row = await conn.fetchrow(
+                "SELECT admin_id FROM ingestion_tasks WHERE id = $1",
+                task_id
+            )
         if message:
             logger.info(f"📋 Tâche {task_id} : {message}")
+
+        # Envoyer la notification (si admin_id existe)
+        if row and row["admin_id"]:
+            admin_id = row["admin_id"]
+            notif_message = message or error or status
+            await notify_admin(admin_id, task_id, status, notif_message)
+
     except Exception as e:
         logger.exception(f"❌ Impossible de mettre à jour le statut de la tâche {task_id}: {e}")
 
@@ -67,21 +79,15 @@ async def save_chunks_to_task(
     task_id: str,
     chunks: List[Dict[str, Any]],
 ):
-    """
-    Stocke les chunks dans la tâche (en JSONB).
-    json.dumps() est exécuté dans un thread pour éviter de bloquer l'event loop.
-    """
+    """Stocke les chunks dans la tâche (en JSONB)."""
     try:
         pool = await get_pool()
-        # json.dumps est CPU-bound → on le déporte dans un thread
         chunks_json = await asyncio.to_thread(json.dumps, chunks)
         async with pool.acquire() as conn:
             await conn.execute(
                 """
                 UPDATE ingestion_tasks
-                SET
-                    chunks = $1::jsonb,
-                    updated_at = NOW()
+                SET chunks = $1::jsonb, updated_at = NOW()
                 WHERE id = $2
                 """,
                 chunks_json,
@@ -101,14 +107,8 @@ async def generate_chunks_for_task(
     files: List[str],
     metadata: Dict[str, Any],
 ) -> List[Dict[str, Any]]:
-    """
-    Génère les chunks à partir des fichiers.
-    build_chunks() est synchrone et potentiellement très lourd.
-    On l'exécute avec asyncio.to_thread() pour ne PAS bloquer l'event loop.
-    """
     all_chunks: List[Dict[str, Any]] = []
 
-    # Vérification du type de metadata
     if not isinstance(metadata, dict):
         logger.error(f"❌ metadata n'est pas un dictionnaire: {type(metadata)}")
         try:
@@ -127,7 +127,6 @@ async def generate_chunks_for_task(
         job.metadata["language"] = "english"
         job.metadata["embedding_model"] = settings.embedding_model
 
-        # 🔥 OPÉRATION LOURDE : build_chunks() est synchrone
         chunks = await asyncio.to_thread(
             build_chunks,
             job=job,
@@ -152,15 +151,10 @@ async def generate_chunks_for_task(
 
 
 # ============================================================
-# SYNCHRONOUS POSTGRES INSERT (pour être appelé dans un thread)
+# SYNCHRONOUS POSTGRES INSERT
 # ============================================================
 
 def insert_chunks_sync(chunks: List[Dict[str, Any]]) -> int:
-    """
-    Fonction synchrone utilisée dans un thread.
-    On isole la connexion PostgreSQL synchrone ici afin de pouvoir appeler
-    toute cette opération avec asyncio.to_thread().
-    """
     conn = get_postgres_connection()
     try:
         return insert_chunks_with_embeddings(conn, chunks)
@@ -177,12 +171,7 @@ async def run_embedding_phase(
     chunks: List[Dict[str, Any]],
     metadata: Dict[str, Any],
 ):
-    """
-    Génération des embeddings + insertion PostgreSQL.
-    Toutes les opérations synchrones lourdes sont exécutées dans des threads.
-    """
     try:
-        # Vérification des chunks
         if isinstance(chunks, str):
             chunks = await asyncio.to_thread(json.loads, chunks)
         if not isinstance(chunks, list):
@@ -190,7 +179,6 @@ async def run_embedding_phase(
 
         logger.info(f"🧠 Tâche {task_id}: {len(chunks)} chunks à traiter")
 
-        # Skip embedding ?
         if metadata.get("skip_embedding", False):
             logger.info(f"⏭️ Embedding ignoré pour {task_id}")
             await update_task_status(task_id, "COMPLETED", message="Embedding skipped (test mode)")
@@ -204,7 +192,6 @@ async def run_embedding_phase(
 
         logger.info(f"🧠 Génération embeddings pour {task_id}...")
 
-        # 🔥 OPÉRATION LOURDE : enrich_chunks_with_embeddings() est synchrone
         await asyncio.to_thread(
             enrich_chunks_with_embeddings,
             chunks=chunks,
@@ -216,7 +203,6 @@ async def run_embedding_phase(
 
         logger.info(f"✅ Embeddings terminés pour {task_id}")
 
-        # Insertion en base de données
         if not metadata.get("skip_db_insert", False):
             await update_task_status(
                 task_id,
@@ -225,13 +211,9 @@ async def run_embedding_phase(
             )
 
             logger.info(f"💾 Insertion PostgreSQL pour {task_id}...")
-
-            # 🔥 Toute la connexion + insertion est exécutée dans un thread
             inserted = await asyncio.to_thread(insert_chunks_sync, chunks)
-
             logger.info(f"✅ {inserted} chunks insérés pour {task_id}")
 
-        # Terminé
         await update_task_status(task_id, "COMPLETED", message="Ingestion terminée avec succès")
         logger.info(f"🎉 Tâche {task_id} terminée")
 
@@ -250,11 +232,6 @@ async def start_ingestion_task(
     metadata: Dict[str, Any],
     mode: str,
 ):
-    """
-    Point d'entrée principal de l'ingestion.
-    Cette fonction est lancée avec asyncio.create_task() depuis FastAPI.
-    Les opérations lourdes sont déportées dans des threads avec asyncio.to_thread().
-    """
     try:
         logger.info(f"🚀 Démarrage tâche {task_id}, mode={mode}")
         logger.debug(f"📦 metadata reçu: {metadata} (type={type(metadata)})")
@@ -273,12 +250,10 @@ async def start_ingestion_task(
             message="Extraction et génération des chunks en cours",
         )
 
-        # 🔥 build_chunks() est exécuté dans un thread via generate_chunks_for_task
         chunks = await generate_chunks_for_task(files, metadata)
 
         logger.info(f"📦 {len(chunks)} chunks générés pour {task_id}")
 
-        # Sauvegarde des chunks (json.dumps dans un thread)
         await save_chunks_to_task(task_id, chunks)
 
         if mode == "auto":
@@ -305,7 +280,6 @@ async def start_ingestion_task(
 # ============================================================
 
 async def get_task_status_async(task_id: str) -> Dict[str, Any]:
-    """Récupère le statut d'une tâche depuis PostgreSQL."""
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
@@ -331,13 +305,3 @@ async def get_task_status_async(task_id: str) -> Dict[str, Any]:
     except Exception as e:
         logger.exception(f"❌ Erreur récupération tâche {task_id}: {e}")
         return {"status": "error", "error": str(e)}
-
-
-# ============================================================
-# MEMORY CACHE – COMPATIBILITY (optionnel)
-# ============================================================
-
-tasks_memory: Dict[str, Any] = {}
-
-def get_task_status_memory(task_id: str) -> Dict[str, Any]:
-    return tasks_memory.get(task_id, {"status": "not_found"})

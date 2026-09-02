@@ -83,3 +83,19 @@ CREATE TABLE IF NOT EXISTS ingestion_tasks (
 
 CREATE INDEX idx_ingestion_tasks_status ON ingestion_tasks(status);
 CREATE INDEX idx_ingestion_tasks_created_at ON ingestion_tasks(created_at);
+
+
+CREATE TABLE IF NOT EXISTS notifications (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES api_keys(id) ON DELETE CASCADE,
+    task_id UUID REFERENCES ingestion_tasks(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    type VARCHAR(50) NOT NULL, -- 'info', 'success', 'warning', 'error'
+    is_read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_notifications_user_id ON notifications(user_id);
+CREATE INDEX idx_notifications_is_read ON notifications(is_read);
+CREATE INDEX idx_notifications_created_at ON notifications(created_at DESC);

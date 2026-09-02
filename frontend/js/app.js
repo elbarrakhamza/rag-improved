@@ -37,6 +37,10 @@ const app = {
                 this.handleLogout();
             });
         }
+
+        if (window.notificationsManager) {
+    window.notificationsManager.init();
+}
         
         // Setup navigation
         this.setupNavigation();
