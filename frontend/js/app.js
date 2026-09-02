@@ -15,10 +15,9 @@ const app = {
             this.showLogin();
         }
         
-        // Setup login - utiliser addEventListener proprement
+        // Setup login
         const loginForm = document.getElementById('loginForm');
         if (loginForm) {
-            // Supprimer les anciens listeners
             const newForm = loginForm.cloneNode(true);
             loginForm.parentNode.replaceChild(newForm, loginForm);
             
@@ -38,7 +37,7 @@ const app = {
             });
         }
         
-        // Setup navigation après chargement de l'app
+        // Setup navigation
         this.setupNavigation();
     },
 
@@ -52,7 +51,6 @@ const app = {
         if (appContainer) appContainer.style.display = 'none';
         if (errorDiv) errorDiv.style.display = 'none';
         
-        // Vider le champ de clé pour forcer une nouvelle saisie
         const apiKeyInput = document.getElementById('apiKeyInput');
         if (apiKeyInput) apiKeyInput.value = '';
     },
@@ -78,8 +76,9 @@ const app = {
             
             this.showApp();
             this.checkApiConnection();
-            this.loadDashboard();
-            showToast('✅ Connexion réussie !', 'success', 3000);
+            // Charger le dashboard APRÈS la connexion réussie
+            await this.loadDashboard();
+            await this.loadFeedbackData();
             
         } catch (error) {
             console.error('❌ Clé invalide:', error.message);
@@ -106,13 +105,11 @@ const app = {
         const key = apiKeyInput ? apiKeyInput.value.trim() : '';
         const url = apiUrlInput ? apiUrlInput.value.trim() : 'https://api-rag.stage.enset.top';
         
-        // Validation
         if (!key) {
             if (errorDiv) {
                 errorDiv.textContent = '❌ Veuillez entrer une clé API';
                 errorDiv.style.display = 'block';
             }
-            showToast('❌ Veuillez entrer une clé API', 'error', 3000);
             return;
         }
         
@@ -121,11 +118,9 @@ const app = {
                 errorDiv.textContent = '❌ Veuillez entrer l\'URL de l\'API';
                 errorDiv.style.display = 'block';
             }
-            showToast('❌ Veuillez entrer l\'URL de l\'API', 'error', 3000);
             return;
         }
         
-        // Désactiver le bouton pendant la vérification
         const loginBtn = document.querySelector('.btn-login');
         if (loginBtn) {
             loginBtn.disabled = true;
@@ -136,40 +131,36 @@ const app = {
             api.setApiKey(key);
             api.setApiBase(url);
             
-            // Tester avec admin/cache/stats
             const result = await api.getCacheStats();
             console.log('✅ Connexion réussie:', result);
             
-            // Succès
             if (errorDiv) errorDiv.style.display = 'none';
             this.showApp();
             this.checkApiConnection();
-            this.loadDashboard();
+            // Charger le dashboard APRÈS la connexion réussie
+            await this.loadDashboard();
+            await this.loadFeedbackData();
             showToast('✅ Connexion réussie !', 'success', 3000);
             
         } catch (error) {
             console.error('❌ Erreur de connexion:', error.message);
             
-            // Échec
             if (errorDiv) {
                 errorDiv.textContent = `❌ ${error.message}`;
                 errorDiv.style.display = 'block';
             }
             showToast(`❌ ${error.message}`, 'error', 5000);
             
-            // Nettoyer les credentials
             localStorage.removeItem('apiKey');
             localStorage.removeItem('apiBase');
             api.setApiKey('');
             
-            // Réactiver le champ pour nouvelle saisie
             if (apiKeyInput) {
                 apiKeyInput.value = '';
                 apiKeyInput.focus();
             }
             
         } finally {
-            // Réactiver le bouton
             if (loginBtn) {
                 loginBtn.disabled = false;
                 loginBtn.textContent = '🔓 Se connecter';
@@ -218,6 +209,7 @@ const app = {
                     pageTitle.textContent = label.textContent;
                 }
                 
+                // Rafraîchir les données selon l'onglet
                 if (tabId === 'documents' && window.documentsManager) {
                     window.documentsManager.loadDocuments();
                 }
@@ -271,6 +263,7 @@ const app = {
     },
 
     async loadDashboard() {
+        console.log('📊 Chargement du dashboard...');
         try {
             const docs = await api.getDocuments(1, 1);
             const statDocuments = document.getElementById('statDocuments');
@@ -280,12 +273,29 @@ const app = {
             const statCache = document.getElementById('statCache');
             if (statCache) statCache.textContent = cacheStats.total_cached || 0;
             
-            const topQuestions = await api.getTopQuestions(1);
+            console.log('✅ Dashboard chargé');
+        } catch (error) {
+            console.error('❌ Erreur chargement dashboard:', error);
+            // Ne pas afficher d'erreur ici, juste log
+        }
+    },
+
+    async loadFeedbackData() {
+        console.log('💬 Chargement des feedbacks...');
+        try {
+            const topQuestions = await api.getTopQuestions(5);
             const statFeedback = document.getElementById('statFeedback');
             if (statFeedback) statFeedback.textContent = topQuestions.length || 0;
             
+            // Mettre à jour les listes
+            if (window.feedbackManager) {
+                await window.feedbackManager.loadTopQuestions();
+                await window.feedbackManager.loadLowPerforming();
+            }
+            console.log('✅ Feedbacks chargés');
         } catch (error) {
-            console.error('Error loading dashboard:', error);
+            console.error('❌ Erreur chargement feedbacks:', error);
+            // Ne pas afficher d'erreur ici, juste log
         }
     }
 };
@@ -305,7 +315,7 @@ function showToast(message, type = 'info', duration = 5000) {
     }, duration);
 }
 
-// Initialization - attendre que le DOM soit chargé
+// Initialization
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
         console.log('📄 DOM chargé, initialisation...');
@@ -316,5 +326,4 @@ if (document.readyState === 'loading') {
     app.init();
 }
 
-// Exposer app globalement
 window.app = app;
