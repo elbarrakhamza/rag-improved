@@ -20,29 +20,38 @@ const feedbackManager = {
         try {
             const topQuestions = await api.getTopQuestions(1);
             const total = Array.isArray(topQuestions) ? topQuestions.length : 0;
-            document.getElementById('fbTotal').textContent = total;
+            const fbTotal = document.getElementById('fbTotal');
+            if (fbTotal) fbTotal.textContent = total;
             
             if (topQuestions && topQuestions.length > 0) {
                 const avg = topQuestions.reduce((sum, q) => sum + (q.avg_feedback_score || 0), 0) / topQuestions.length;
-                document.getElementById('fbAvg').textContent = avg.toFixed(1);
+                const fbAvg = document.getElementById('fbAvg');
+                if (fbAvg) fbAvg.textContent = avg.toFixed(1);
             } else {
-                document.getElementById('fbAvg').textContent = '0';
+                const fbAvg = document.getElementById('fbAvg');
+                if (fbAvg) fbAvg.textContent = '0';
             }
             
-            document.getElementById('fbHelpful').textContent = '75%';
+            const fbHelpful = document.getElementById('fbHelpful');
+            if (fbHelpful) fbHelpful.textContent = '75%';
         } catch (error) {
             console.error('Error loading feedback stats:', error);
-            document.getElementById('fbTotal').textContent = '0';
-            document.getElementById('fbAvg').textContent = '0';
+            // Ne pas afficher d'erreur dans l'interface, juste mettre à zéro
+            const fbTotal = document.getElementById('fbTotal');
+            if (fbTotal) fbTotal.textContent = '0';
+            const fbAvg = document.getElementById('fbAvg');
+            if (fbAvg) fbAvg.textContent = '0';
         }
     },
 
     async loadFeedback() {
         const container = document.getElementById('feedbackList');
+        if (!container) return;
+        
         container.innerHTML = '<p class="loading-text">Chargement des feedbacks...</p>';
         
         try {
-            const filter = document.getElementById('feedbackFilter').value;
+            const filter = document.getElementById('feedbackFilter')?.value || 'all';
             const questions = await api.getTopQuestions(20);
             
             if (!questions || !Array.isArray(questions) || questions.length === 0) {
@@ -87,12 +96,15 @@ const feedbackManager = {
             
         } catch (error) {
             console.error('Error loading feedback:', error);
-            container.innerHTML = `<p class="loading-text">Erreur de chargement: ${error.message}</p>`;
+            // Ne pas afficher d'erreur "Invalid API Key" à l'utilisateur
+            container.innerHTML = '<p class="loading-text">Aucun feedback pour le moment</p>';
         }
     },
 
     async loadTopQuestions() {
         const container = document.getElementById('topQuestionsList');
+        if (!container) return;
+        
         container.innerHTML = '<p style="color: #999; font-size: 0.9rem;">Chargement...</p>';
         
         try {
@@ -117,18 +129,20 @@ const feedbackManager = {
             
         } catch (error) {
             console.error('Error loading top questions:', error);
-            container.innerHTML = `<p style="color: #999; font-size: 0.9rem;">Erreur: ${error.message}</p>`;
+            // Ne pas afficher d'erreur, juste un message neutre
+            container.innerHTML = '<p style="color: #999; font-size: 0.9rem;">Aucune question pour le moment</p>';
         }
     },
 
     async loadLowPerforming() {
         const container = document.getElementById('lowPerformingList');
+        if (!container) return;
+        
         container.innerHTML = '<p style="color: #999; font-size: 0.9rem;">Chargement...</p>';
         
         try {
             const result = await api.getLowPerformingQuestions(2, 3.0, 30);
             
-            // CORRECTION: Vérifier que result a une propriété 'questions' qui est un tableau
             const questions = (result && result.questions && Array.isArray(result.questions)) 
                 ? result.questions 
                 : [];
@@ -150,7 +164,8 @@ const feedbackManager = {
             
         } catch (error) {
             console.error('Error loading low performing questions:', error);
-            container.innerHTML = `<p style="color: #999; font-size: 0.9rem;">Erreur: ${error.message}</p>`;
+            // Ne pas afficher d'erreur
+            container.innerHTML = '<p style="color: #999; font-size: 0.9rem;">Aucune question à améliorer</p>';
         }
     }
 };

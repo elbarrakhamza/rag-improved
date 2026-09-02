@@ -45,10 +45,16 @@ const api = {
         
         // Gérer les erreurs d'authentification
         if (response.status === 401 || response.status === 403) {
-            // Clé invalide
-            localStorage.removeItem('apiKey');
-            localStorage.removeItem('apiBase');
-            throw new Error('Invalid API Key');
+            // Ne supprimer la clé que si c'est un endpoint critique
+            // Pour les feedbacks, on veut juste retourner une erreur
+            if (endpoint.includes('/admin/') || endpoint === '/query') {
+                localStorage.removeItem('apiKey');
+                localStorage.removeItem('apiBase');
+                throw new Error('Invalid API Key');
+            }
+            // Pour les endpoints non-critiques, juste throw une erreur
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.detail || 'Unauthorized');
         }
         
         if (!response.ok) {
