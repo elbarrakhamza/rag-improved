@@ -69,7 +69,7 @@ async def upload_documents(
                 detail="No supported files found (PDF, TXT, MD)"
             )
         
-        from app.tasks.ingestion_task import start_ingestion
+        from app.tasks.ingestion_task import start_ingestion_task as start_ingestion
         task_id = str(uuid.uuid4())
         async with request.app.state.pool.acquire() as conn:
             await conn.execute(
