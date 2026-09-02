@@ -23,7 +23,7 @@ class FeedbackRequest(BaseModel):
 
 
 @router.post("/submit")
-@limiter.limit("10/minute")
+@limiter.limit("100/minute")
 async def submit_feedback(
     request: Request,
     feedback: FeedbackRequest,
@@ -81,7 +81,7 @@ async def submit_feedback(
 
 
 @router.get("/stats/question")
-@limiter.limit("10/minute")
+@limiter.limit("100/minute")
 async def get_question_stats(
     request: Request,
     question: str,
@@ -121,7 +121,7 @@ async def get_question_stats(
 
 
 @router.get("/top-questions")
-@limiter.limit("5/minute")
+@limiter.limit("100/minute")
 async def get_top_questions(
     request: Request,
     db_connection: Connection = Depends(get_connection),
@@ -158,7 +158,7 @@ async def get_top_questions(
 
 
 @router.get("/low-performing-questions")
-@limiter.limit("5/minute")
+@limiter.limit("100/minute")
 async def get_low_performing_questions(
     request: Request,
     db_connection: Connection = Depends(get_connection),

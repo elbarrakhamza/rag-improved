@@ -11,7 +11,7 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
 @router.get("/")
-@limiter.limit("10/minute")
+@limiter.limit("100/minute")
 async def list_tasks(
     request: Request,
     db_connection: Connection = Depends(get_connection),
@@ -43,7 +43,7 @@ async def list_tasks(
 
 
 @router.get("/{task_id}")
-@limiter.limit("10/minute")
+@limiter.limit("100/minute")
 async def get_task(
     task_id: str,
     request: Request,
@@ -61,7 +61,7 @@ async def get_task(
 
 
 @router.get("/{task_id}/chunks")
-@limiter.limit("10/minute")
+@limiter.limit("100/minute")
 async def get_task_chunks(
     task_id: str,
     request: Request,
@@ -82,7 +82,7 @@ async def get_task_chunks(
 
 
 @router.put("/{task_id}/chunks")
-@limiter.limit("5/minute")
+@limiter.limit("100/minute")
 async def update_task_chunks(
     task_id: str,
     chunks: List[Dict[str, Any]],
@@ -119,7 +119,7 @@ async def update_task_chunks(
 
 
 @router.post("/{task_id}/validate")
-@limiter.limit("5/minute")
+@limiter.limit("100/minute")
 async def validate_task(
     task_id: str,
     request: Request,
@@ -163,7 +163,7 @@ async def validate_task(
 
 
 @router.post("/{task_id}/cancel")
-@limiter.limit("5/minute")
+@limiter.limit("100/minute")
 async def cancel_task(
     task_id: str,
     request: Request,
@@ -183,7 +183,7 @@ async def cancel_task(
 
 
 @router.post("/{task_id}/retry")
-@limiter.limit("5/minute")
+@limiter.limit("100/minute")
 async def retry_task(
     task_id: str,
     request: Request,
