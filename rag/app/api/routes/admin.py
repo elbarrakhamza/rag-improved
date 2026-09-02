@@ -15,6 +15,7 @@ from loguru import logger
 from app.core.security import get_admin_api_key, clear_api_key_cache
 from app.service.cache import embedding_cache
 from app.core.config import settings
+from app.tasks.ingestion_task import start_ingestion_task
 import hashlib
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -69,7 +70,6 @@ async def upload_documents(
                 detail="No supported files found (PDF, TXT, MD)"
             )
         
-        from app.tasks.ingestion_task import start_ingestion_task as start_ingestion
         task_id = str(uuid.uuid4())
         async with request.app.state.pool.acquire() as conn:
             await conn.execute(
@@ -95,7 +95,6 @@ async def upload_documents(
             )
 
         # Lancer l'ingestion en arrière-plan
-        from app.tasks.ingestion_task import start_ingestion_task
         asyncio.create_task(start_ingestion_task(task_id, uploaded_files, metadata, mode))
 
         return {
@@ -117,15 +116,11 @@ async def get_task_status(
     request: Request,
     key_info: dict = Depends(get_admin_api_key)
 ):
-    """
-    Récupère le statut d'une tâche d'ingestion
-    """
-    from app.tasks.ingestion_task import get_task_status as get_status
-    
-    status = get_status(task_id)
+    """Récupère le statut d'une tâche d'ingestion."""
+    from app.tasks.ingestion_task import get_task_status_async
+    status = await get_task_status_async(task_id)
     if status.get("status") == "not_found":
         raise HTTPException(status_code=404, detail="Task not found")
-    
     return status
 
 
