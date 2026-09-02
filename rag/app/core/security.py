@@ -11,24 +11,31 @@ _api_key_cache: Dict[str, Dict[str, Any]] = {}
 
 
 async def get_api_key_info(api_key: str, request: Optional[Request] = None) -> Dict[str, Any]:
-    """
-    Récupère les informations de la clé API depuis la base de données
-    Retourne: {"role": "admin"|"employee"|"public", "user_id": int, "key_hash": str}
-    """
-    # Vérifier le cache
     if api_key in _api_key_cache:
         return _api_key_cache[api_key]
-    
-    # Calculer le hash de la clé
+
     key_hash = hashlib.sha256(api_key.encode()).hexdigest()
-    
+
     # Vérifier si c'est la clé admin (fallback rapide)
     if api_key == settings.admin_api_key:
+        # Essayer de récupérer l'id depuis la base
+        if request and hasattr(request.app, "state") and hasattr(request.app.state, "pool"):
+            pool = request.app.state.pool
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT id FROM api_keys WHERE key_hash = $1 AND role = 'admin'",
+                    key_hash
+                )
+                if row:
+                    result = {"role": "admin", "user_id": 0, "key_hash": key_hash, "api_key_id": row["id"]}
+                    _api_key_cache[api_key] = result
+                    return result
+        # Fallback si non trouvé dans la base
         result = {"role": "admin", "user_id": 0, "key_hash": key_hash}
         _api_key_cache[api_key] = result
         return result
-    
-    # Vérifier dans la base de données
+
+    # Sinon, vérifier dans la base pour les autres clés
     if request and hasattr(request.app, "state") and hasattr(request.app.state, "pool"):
         pool = request.app.state.pool
         async with pool.acquire() as conn:
@@ -40,7 +47,6 @@ async def get_api_key_info(api_key: str, request: Optional[Request] = None) -> D
                 """,
                 key_hash
             )
-            
             if row:
                 result = {
                     "role": row["role"],
@@ -50,7 +56,7 @@ async def get_api_key_info(api_key: str, request: Optional[Request] = None) -> D
                 }
                 _api_key_cache[api_key] = result
                 return result
-    
+
     return {"role": "public", "user_id": None, "key_hash": key_hash}
 
 
