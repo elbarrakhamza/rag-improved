@@ -3,6 +3,7 @@ import json
 import uuid
 import tempfile
 import zipfile
+import os
 import shutil
 import hashlib
 import secrets
