@@ -24,8 +24,6 @@
                     <span class="form-hint">Contactez l'administrateur pour obtenir votre clé</span>
                 </div>
                 
-                
-                
                 <button type="submit" class="btn-login">🔓 Se connecter</button>
                 
                 <div id="loginError" class="login-error" style="display:none;">
@@ -41,7 +39,7 @@
         </div>
     </div>
 
-    <!-- APPLICATION PRINCIPALE (masquée tant que non connecté) -->
+    <!-- APPLICATION PRINCIPALE -->
     <div id="appContainer" class="app-container" style="display:none;">
         <!-- Sidebar -->
         <nav class="sidebar" id="sidebar">
@@ -58,6 +56,10 @@
                 <li class="nav-item" data-tab="upload">
                     <span class="icon">📤</span>
                     <span class="label">Upload</span>
+                </li>
+                <li class="nav-item" data-tab="tasks">
+                    <span class="icon">📋</span>
+                    <span class="label">Tâches</span>
                 </li>
                 <li class="nav-item" data-tab="documents">
                     <span class="icon">📄</span>
@@ -95,7 +97,7 @@
                     <h1 id="pageTitle">Dashboard</h1>
                 </div>
                 <div class="header-right">
-                    <div class="notification-bell">
+                    <div class="notification-bell" id="notificationBell">
                         <span class="bell-icon">🔔</span>
                         <span class="badge" id="notificationBadge">0</span>
                     </div>
@@ -135,6 +137,13 @@
                         <div class="stat-info">
                             <span class="stat-label">Cache</span>
                             <span class="stat-value" id="statCache">0</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">📋</div>
+                        <div class="stat-info">
+                            <span class="stat-label">Tâches</span>
+                            <span class="stat-value" id="statTasks">0</span>
                         </div>
                     </div>
                 </div>
@@ -209,6 +218,13 @@
                                 </select>
                             </div>
                             <div class="form-group">
+                                <label>⚙️ Mode de traitement</label>
+                                <select id="ingestionMode">
+                                    <option value="auto">Automatique (tout enchaîné)</option>
+                                    <option value="manual">Manuel (validation des chunks)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
                                 <label>⚙️ Options avancées</label>
                                 <div class="checkbox-group">
                                     <label>
@@ -238,6 +254,48 @@
                         </div>
                         <p id="progressMessage">Initialisation...</p>
                         <div id="taskStatus" class="task-status"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tasks Tab (Phase 2) -->
+            <section id="tab-tasks" class="tab-content">
+                <div class="tasks-header">
+                    <h3>Gestion des tâches d'ingestion</h3>
+                    <div class="tasks-filters">
+                        <select id="taskFilter" class="filter-select">
+                            <option value="all">Tous les statuts</option>
+                            <option value="UPLOADED">Uploadé</option>
+                            <option value="GENERATING_CHUNKS">Génération des chunks</option>
+                            <option value="CHUNKS_GENERATED">Chunks générés</option>
+                            <option value="CHUNKS_MODIFIED">Chunks modifiés</option>
+                            <option value="EMBEDDING_IN_PROGRESS">Embedding en cours</option>
+                            <option value="COMPLETED">Terminé</option>
+                            <option value="FAILED">Échec</option>
+                            <option value="CANCELLED">Annulé</option>
+                        </select>
+                        <button class="btn btn-secondary" id="refreshTasksBtn">🔄 Actualiser</button>
+                    </div>
+                </div>
+                <div id="tasksList" class="tasks-list">
+                    <p class="loading-text">Chargement des tâches...</p>
+                </div>
+                <div class="pagination" id="taskPagination"></div>
+
+                <!-- Modal de visualisation des chunks -->
+                <div id="chunksModal" class="modal" style="display:none;">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>📝 Visualisation des chunks</h3>
+                            <button class="modal-close" id="closeChunksModal">✕</button>
+                        </div>
+                        <div class="modal-body">
+                            <div id="chunksContainer"></div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-secondary" id="closeModalBtn">Fermer</button>
+                            <button class="btn btn-success" id="validateChunksBtn">✅ Valider et lancer l'embedding</button>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -354,6 +412,7 @@
 
     <script src="js/api.js"></script>
     <script src="js/upload.js"></script>
+    <script src="js/tasks.js"></script>
     <script src="js/documents.js"></script>
     <script src="js/apikeys.js"></script>
     <script src="js/feedback.js"></script>

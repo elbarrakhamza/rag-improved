@@ -1,7 +1,9 @@
-// Upload Management
+// upload.js - Gestion complète de l'upload avec mode auto/manual
+
 const uploadManager = {
     files: [],
     currentTaskId: null,
+    poller: null,
 
     init() {
         const uploadArea = document.getElementById('uploadArea');
@@ -25,6 +27,8 @@ const uploadManager = {
 
         fileInput.addEventListener('change', (e) => {
             this.handleFiles(e.target.files);
+            // Reset pour permettre de re-sélectionner les mêmes fichiers
+            fileInput.value = '';
         });
 
         // Form submission
@@ -58,7 +62,6 @@ const uploadManager = {
             return;
         }
 
-        // Prendre le premier fichier pour la détection
         const firstFile = this.files[0];
         const fileName = firstFile.name;
         
@@ -88,7 +91,6 @@ const uploadManager = {
         }
         
         if (!detectedBrand && this.files.length > 1) {
-            // Si plusieurs fichiers, essayer de détecter depuis le second
             const secondFile = this.files[1];
             if (secondFile) {
                 const secondName = secondFile.name;
@@ -153,7 +155,6 @@ const uploadManager = {
         document.getElementById('metaVersion').value = detectedVersion || 'Inconnue (à définir)';
         document.getElementById('metaType').value = detectedType;
         
-        // Afficher un résumé de la détection
         if (detectedBrand || detectedModel || detectedVersion) {
             const summary = [];
             if (detectedBrand) summary.push(`Marque: ${detectedBrand}`);
@@ -196,17 +197,16 @@ const uploadManager = {
 
         const formData = new FormData();
         
-        // Add files
+        // Ajouter les fichiers
         for (const file of this.files) {
             formData.append('files', file);
         }
 
-        // Add metadata - maintenant automatique
+        // Métadonnées
         let brand = document.getElementById('metaBrand').value;
         let model = document.getElementById('metaModel').value;
         let version = document.getElementById('metaVersion').value;
         
-        // Si "Inconnue (à définir)" est détecté, utiliser "unknown"
         if (brand === 'Inconnue (à définir)' || !brand) brand = 'unknown';
         if (model === 'Inconnu (à définir)' || !model) model = 'unknown';
         if (version === 'Inconnue (à définir)' || !version) version = 'unknown';
@@ -219,8 +219,12 @@ const uploadManager = {
         formData.append('use_smart_pdf', document.getElementById('optSmartPDF').checked);
         formData.append('use_vision_llm', document.getElementById('optVisionLLM').checked);
         formData.append('skip_embedding', document.getElementById('optSkipEmbedding').checked);
+        
+        // Mode de traitement (auto/manual)
+        const mode = document.getElementById('ingestionMode').value;
+        formData.append('mode', mode);
 
-        // Show progress
+        // Progress
         const progressDiv = document.getElementById('uploadProgress');
         progressDiv.style.display = 'block';
         document.getElementById('uploadBtn').disabled = true;
@@ -229,9 +233,9 @@ const uploadManager = {
             const result = await api.upload(formData);
             this.currentTaskId = result.task_id;
             
-            showToast(`Upload démarré: ${result.files_count} fichiers`, 'success');
+            showToast(`Upload démarré (mode ${result.mode}) : ${result.files_count} fichiers`, 'success');
             
-            // Start polling
+            // Démarrer le polling pour suivre l'avancement
             this.pollTask(result.task_id);
             
         } catch (error) {
@@ -242,7 +246,12 @@ const uploadManager = {
     },
 
     pollTask(taskId) {
-        const poller = new TaskPoller(
+        // Arrêter l'ancien poller s'il existe
+        if (this.poller) {
+            this.poller.stop();
+        }
+        
+        this.poller = new TaskPoller(
             taskId,
             (status) => {
                 this.updateProgress(status);
@@ -254,9 +263,10 @@ const uploadManager = {
                 showToast(`Tâche échouée: ${error}`, 'error');
                 document.getElementById('uploadBtn').disabled = false;
                 document.getElementById('uploadProgress').style.display = 'none';
+                this.poller = null;
             }
         );
-        poller.start();
+        this.poller.start();
     },
 
     updateProgress(status) {
@@ -272,6 +282,7 @@ const uploadManager = {
             <div>Statut: ${status.status}</div>
             <div>Progression: ${progress}/${total}</div>
             <div>Mode: ${status.mode || 'production'}</div>
+            ${status.error_message ? `<div style="color: red;">Erreur: ${status.error_message}</div>` : ''}
         `;
     },
 
@@ -288,21 +299,30 @@ const uploadManager = {
         `;
         
         document.getElementById('uploadBtn').disabled = false;
+        this.poller = null;
+        
+        // Si le mode était manuel, informer l'utilisateur qu'il doit valider les chunks
+        if (status.status === 'CHUNKS_GENERATED') {
+            showToast('📝 Chunks générés ! Allez dans l\'onglet "Tâches" pour les valider.', 'info', 8000);
+        }
         
         setTimeout(() => {
             progressDiv.style.display = 'none';
-            // Clear files
+            // Vider la liste des fichiers
             this.files = [];
             this.renderFileList();
-            // Refresh documents
+            // Rafraîchir les documents et les tâches
             if (window.documentsManager) {
                 window.documentsManager.loadDocuments();
+            }
+            if (window.tasksManager) {
+                window.tasksManager.loadTasks();
             }
         }, 5000);
     }
 };
 
-// Initialize upload manager when DOM is ready
+// Initialisation au chargement du DOM
 document.addEventListener('DOMContentLoaded', () => {
     uploadManager.init();
 });

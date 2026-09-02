@@ -109,6 +109,44 @@ const api = {
         return this.request(`/admin/task/${taskId}`);
     },
 
+    // Admin: Tasks
+async getTasks(limit = 20, offset = 0) {
+    return this.request(`/admin/tasks?limit=${limit}&offset=${offset}`);
+},
+
+async getTask(taskId) {
+    return this.request(`/admin/task/${taskId}`);
+},
+
+async getTaskChunks(taskId) {
+    return this.request(`/admin/task/${taskId}/chunks`);
+},
+
+async updateTaskChunks(taskId, chunks) {
+    return this.request(`/admin/task/${taskId}/chunks`, {
+        method: 'PUT',
+        body: JSON.stringify(chunks)
+    });
+},
+
+async validateTask(taskId) {
+    return this.request(`/admin/task/${taskId}/validate`, {
+        method: 'POST'
+    });
+},
+
+async cancelTask(taskId) {
+    return this.request(`/admin/task/${taskId}/cancel`, {
+        method: 'POST'
+    });
+},
+
+async retryTask(taskId) {
+    return this.request(`/admin/task/${taskId}/retry`, {
+        method: 'POST'
+    });
+},
+
     // Admin: Documents
     async getDocuments(page = 1, limit = 50, search = '') {
         const params = new URLSearchParams({ page, limit });
