@@ -25,49 +25,51 @@ const api = {
     },
 
     async request(endpoint, options = {}) {
-    const url = `${API_BASE}${endpoint}`;
-    const headers = {
-        'Content-Type': 'application/json',
-        ...options.headers
-    };
-    
-    if (apiKey) {
-        headers['X-API-Key'] = apiKey;
-    }
-    
-    try {
-        const response = await fetch(url, {
-            ...options,
-            headers,
-            mode: 'cors',
-            credentials: 'include'
-        });
+        const url = `${API_BASE}${endpoint}`;
+        const headers = {
+            'Content-Type': 'application/json',
+            ...options.headers
+        };
         
-        // Gérer les erreurs d'authentification
-        if (response.status === 401 || response.status === 403) {
-            // Ne supprimer la clé que si c'est un endpoint critique
-            // Pour les feedbacks, on veut juste retourner une erreur
-            if (endpoint.includes('/admin/') || endpoint === '/query') {
-                localStorage.removeItem('apiKey');
-                localStorage.removeItem('apiBase');
-                throw new Error('Invalid API Key');
+        if (apiKey) {
+            headers['X-API-Key'] = apiKey;
+        }
+        
+        try {
+            const response = await fetch(url, {
+                ...options,
+                headers,
+                mode: 'cors',
+                credentials: 'include'
+            });
+            
+            // Gérer les erreurs d'authentification
+            if (response.status === 401 || response.status === 403) {
+                // Ne supprimer la clé que si c'est un endpoint critique
+                if (endpoint.includes('/admin/') || endpoint === '/query') {
+                    localStorage.removeItem('apiKey');
+                    localStorage.removeItem('apiBase');
+                    throw new Error('Invalid API Key');
+                }
+                const error = await response.json().catch(() => ({}));
+                throw new Error(error.detail || 'Unauthorized');
             }
-            // Pour les endpoints non-critiques, juste throw une erreur
-            const error = await response.json().catch(() => ({}));
-            throw new Error(error.detail || 'Unauthorized');
+            
+            if (response.status === 429) {
+                throw new Error('Rate limit exceeded. Please wait a moment.');
+            }
+            
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({}));
+                throw new Error(error.detail || `HTTP ${response.status}`);
+            }
+            
+            return response.json();
+        } catch (error) {
+            console.error('API Error:', error);
+            throw error;
         }
-        
-        if (!response.ok) {
-            const error = await response.json().catch(() => ({}));
-            throw new Error(error.detail || `HTTP ${response.status}`);
-        }
-        
-        return response.json();
-    } catch (error) {
-        console.error('API Error:', error);
-        throw error;
-    }
-},
+    },
 
     // Health Check
     async health() {
@@ -104,48 +106,55 @@ const api = {
         return response.json();
     },
 
-    // Admin: Task Status
-    async getTaskStatus(taskId) {
-        return this.request(`/admin/task/${taskId}`);
+    // ===== TASKS =====
+    // Liste des tâches
+    async getTasks(limit = 20, offset = 0) {
+        return this.request(`/tasks?limit=${limit}&offset=${offset}`);
     },
 
-    // Admin: Tasks
-async getTasks(limit = 20, offset = 0) {
-    return this.request(`/admin/tasks?limit=${limit}&offset=${offset}`);
-},
+    // Détails d'une tâche
+    async getTask(taskId) {
+        return this.request(`/tasks/${taskId}`);
+    },
 
-async getTask(taskId) {
-    return this.request(`/admin/task/${taskId}`);
-},
+    // Statut d'une tâche (utilisé par le poller)
+    async getTaskStatus(taskId) {
+        return this.request(`/tasks/${taskId}`);
+    },
 
-async getTaskChunks(taskId) {
-    return this.request(`/admin/task/${taskId}/chunks`);
-},
+    // Récupérer les chunks d'une tâche
+    async getTaskChunks(taskId) {
+        return this.request(`/tasks/${taskId}/chunks`);
+    },
 
-async updateTaskChunks(taskId, chunks) {
-    return this.request(`/admin/task/${taskId}/chunks`, {
-        method: 'PUT',
-        body: JSON.stringify(chunks)
-    });
-},
+    // Mettre à jour les chunks
+    async updateTaskChunks(taskId, chunks) {
+        return this.request(`/tasks/${taskId}/chunks`, {
+            method: 'PUT',
+            body: JSON.stringify(chunks)
+        });
+    },
 
-async validateTask(taskId) {
-    return this.request(`/admin/task/${taskId}/validate`, {
-        method: 'POST'
-    });
-},
+    // Valider une tâche (lancer embedding)
+    async validateTask(taskId) {
+        return this.request(`/tasks/${taskId}/validate`, {
+            method: 'POST'
+        });
+    },
 
-async cancelTask(taskId) {
-    return this.request(`/admin/task/${taskId}/cancel`, {
-        method: 'POST'
-    });
-},
+    // Annuler une tâche
+    async cancelTask(taskId) {
+        return this.request(`/tasks/${taskId}/cancel`, {
+            method: 'POST'
+        });
+    },
 
-async retryTask(taskId) {
-    return this.request(`/admin/task/${taskId}/retry`, {
-        method: 'POST'
-    });
-},
+    // Relancer une tâche
+    async retryTask(taskId) {
+        return this.request(`/tasks/${taskId}/retry`, {
+            method: 'POST'
+        });
+    },
 
     // Admin: Documents
     async getDocuments(page = 1, limit = 50, search = '') {
