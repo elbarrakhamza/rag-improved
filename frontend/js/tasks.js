@@ -1,16 +1,15 @@
 // tasks.js - Gestion des tâches d'ingestion (Phase 2)
+// Rafraîchissement automatique toutes les 15 secondes
 
 const tasksManager = {
-    currentPage: 1,
-    totalPages: 0,
     currentTaskId: null,
-    tasks: [],
+    refreshInterval: null,
 
     init() {
         this.loadTasks();
         
-        // Rafraîchissement automatique toutes les 10 secondes
-        setInterval(() => this.loadTasks(), 10000);
+        // Rafraîchissement automatique toutes les 15 secondes (au lieu de 10)
+        this.refreshInterval = setInterval(() => this.loadTasks(), 15000);
         
         document.getElementById('refreshTasksBtn').addEventListener('click', () => {
             this.loadTasks();
@@ -43,13 +42,13 @@ const tasksManager = {
         container.innerHTML = '<p class="loading-text">Chargement des tâches...</p>';
         
         try {
-            const data = await api.getTasks(20, (this.currentPage - 1) * 20);
-            this.tasks = data || [];
+            const data = await api.getTasks(20, 0);
+            const tasks = data || [];
             
             // Filtrer si nécessaire
-            let filtered = this.tasks;
+            let filtered = tasks;
             if (filter !== 'all') {
-                filtered = this.tasks.filter(t => t.status === filter);
+                filtered = tasks.filter(t => t.status === filter);
             }
             
             if (filtered.length === 0) {
@@ -63,6 +62,7 @@ const tasksManager = {
                 const files = task.files ? JSON.parse(task.files) : [];
                 const fileNames = files.map(f => f.split('/').pop()).join(', ');
                 const mode = task.options ? JSON.parse(task.options).mode : 'auto';
+                const errorMsg = task.error_message ? `<div class="task-error">❌ ${task.error_message}</div>` : '';
                 
                 return `
                     <div class="task-item">
@@ -74,7 +74,7 @@ const tasksManager = {
                                 <span class="task-mode">Mode: ${mode}</span>
                                 <span class="task-date">${new Date(task.created_at).toLocaleString()}</span>
                             </div>
-                            ${task.error_message ? `<div class="task-error">❌ ${task.error_message}</div>` : ''}
+                            ${errorMsg}
                         </div>
                         <div class="task-actions">
                             ${this.getActionButtons(task)}
@@ -230,70 +230,12 @@ const tasksManager = {
 
             // Stocker l'ID de la tâche pour validation ultérieure
             modal.dataset.taskId = taskId;
-
-            // Ajouter un bouton "Sauvegarder les modifications" (optionnel)
-            // On peut le faire via un écouteur global sur le modal
+            this.currentTaskId = taskId;
 
         } catch (error) {
             console.error('Erreur chargement chunks:', error);
             container.innerHTML = `<p class="error" style="color:#f44336;">Erreur : ${error.message}</p>`;
         }
-    },
-
-    displayChunks(chunks) {
-        const container = document.getElementById('chunksContainer');
-        if (!chunks || chunks.length === 0) {
-            container.innerHTML = '<p>Aucun chunk disponible.</p>';
-            return;
-        }
-        
-        container.innerHTML = chunks.map((chunk, index) => `
-            <div class="chunk-item">
-                <div class="chunk-header">
-                    <span class="chunk-index">Chunk #${index + 1}</span>
-                    <span class="chunk-meta">
-                        Page: ${chunk.metadata?.page_number || 'N/A'}
-                        | Source: ${chunk.metadata?.source_file || 'N/A'}
-                    </span>
-                </div>
-                <div class="chunk-content">
-                    <textarea class="chunk-textarea" data-index="${index}">${chunk.page_content || ''}</textarea>
-                </div>
-                <div class="chunk-metadata">
-                    <details>
-                        <summary>Métadonnées</summary>
-                        <pre>${JSON.stringify(chunk.metadata, null, 2)}</pre>
-                    </details>
-                </div>
-            </div>
-        `).join('');
-        
-        // Ajouter la possibilité de modifier les chunks
-        document.querySelectorAll('.chunk-textarea').forEach(textarea => {
-            textarea.addEventListener('change', (e) => {
-                const index = parseInt(e.target.dataset.index);
-                chunks[index].page_content = e.target.value;
-                // Marquer que les chunks ont été modifiés
-                document.getElementById('validateChunksBtn').dataset.modified = 'true';
-            });
-        });
-        
-        // Bouton de sauvegarde des modifications
-        const saveBtn = document.createElement('button');
-        saveBtn.className = 'btn btn-primary';
-        saveBtn.textContent = '💾 Sauvegarder les modifications';
-        saveBtn.style.marginTop = '16px';
-        saveBtn.addEventListener('click', async () => {
-            try {
-                await api.updateTaskChunks(this.currentTaskId, chunks);
-                showToast('✅ Chunks sauvegardés !', 'success');
-                document.getElementById('validateChunksBtn').dataset.modified = 'false';
-                this.loadTasks();
-            } catch (error) {
-                showToast(`Erreur: ${error.message}`, 'error');
-            }
-        });
-        container.appendChild(saveBtn);
     },
 
     closeModal() {

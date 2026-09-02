@@ -1,9 +1,9 @@
 // upload.js - Gestion complète de l'upload avec mode auto/manual
+// Version sans polling intensif : redirige vers l'onglet Tâches après upload
 
 const uploadManager = {
     files: [],
     currentTaskId: null,
-    poller: null,
 
     init() {
         const uploadArea = document.getElementById('uploadArea');
@@ -27,8 +27,7 @@ const uploadManager = {
 
         fileInput.addEventListener('change', (e) => {
             this.handleFiles(e.target.files);
-            // Reset pour permettre de re-sélectionner les mêmes fichiers
-            fileInput.value = '';
+            fileInput.value = ''; // Reset
         });
 
         // Form submission
@@ -224,101 +223,42 @@ const uploadManager = {
         const mode = document.getElementById('ingestionMode').value;
         formData.append('mode', mode);
 
-        // Progress
-        const progressDiv = document.getElementById('uploadProgress');
-        progressDiv.style.display = 'block';
-        document.getElementById('uploadBtn').disabled = true;
+        // Désactiver le bouton et afficher un message de chargement
+        const uploadBtn = document.getElementById('uploadBtn');
+        uploadBtn.disabled = true;
+        uploadBtn.textContent = '⏳ Upload en cours...';
 
         try {
             const result = await api.upload(formData);
             this.currentTaskId = result.task_id;
             
-            showToast(`Upload démarré (mode ${result.mode}) : ${result.files_count} fichiers`, 'success');
+            showToast(`✅ Upload réussi (mode ${result.mode}) : ${result.files_count} fichiers`, 'success');
             
-            // Démarrer le polling pour suivre l'avancement
-            this.pollTask(result.task_id);
-            
-        } catch (error) {
-            showToast(`Upload échoué: ${error.message}`, 'error');
-            progressDiv.style.display = 'none';
-            document.getElementById('uploadBtn').disabled = false;
-        }
-    },
-
-    pollTask(taskId) {
-        // Arrêter l'ancien poller s'il existe
-        if (this.poller) {
-            this.poller.stop();
-        }
-        
-        this.poller = new TaskPoller(
-            taskId,
-            (status) => {
-                this.updateProgress(status);
-            },
-            (status) => {
-                this.onTaskComplete(status);
-            },
-            (error) => {
-                showToast(`Tâche échouée: ${error}`, 'error');
-                document.getElementById('uploadBtn').disabled = false;
-                document.getElementById('uploadProgress').style.display = 'none';
-                this.poller = null;
-            }
-        );
-        this.poller.start();
-    },
-
-    updateProgress(status) {
-        const total = status.total || 1;
-        const progress = status.progress || 0;
-        const percent = Math.round((progress / total) * 100);
-        
-        document.getElementById('progressFill').style.width = `${percent}%`;
-        document.getElementById('progressMessage').textContent = status.message || 'Traitement en cours...';
-        
-        const statusDiv = document.getElementById('taskStatus');
-        statusDiv.innerHTML = `
-            <div>Statut: ${status.status}</div>
-            <div>Progression: ${progress}/${total}</div>
-            <div>Mode: ${status.mode || 'production'}</div>
-            ${status.error_message ? `<div style="color: red;">Erreur: ${status.error_message}</div>` : ''}
-        `;
-    },
-
-    onTaskComplete(status) {
-        const progressDiv = document.getElementById('uploadProgress');
-        progressDiv.querySelector('.progress-fill').style.width = '100%';
-        document.getElementById('progressMessage').textContent = status.message || 'Terminé !';
-        
-        const statusDiv = document.getElementById('taskStatus');
-        statusDiv.innerHTML = `
-            <div style="color: #4CAF50;">✅ ${status.message}</div>
-            <div>Chunks: ${status.chunks_count || status.chunks_inserted || 0}</div>
-            ${status.chunks_file ? `<div>Fichier: ${status.chunks_file}</div>` : ''}
-        `;
-        
-        document.getElementById('uploadBtn').disabled = false;
-        this.poller = null;
-        
-        // Si le mode était manuel, informer l'utilisateur qu'il doit valider les chunks
-        if (status.status === 'CHUNKS_GENERATED') {
-            showToast('📝 Chunks générés ! Allez dans l\'onglet "Tâches" pour les valider.', 'info', 8000);
-        }
-        
-        setTimeout(() => {
-            progressDiv.style.display = 'none';
-            // Vider la liste des fichiers
+            // Réinitialiser le formulaire
             this.files = [];
             this.renderFileList();
-            // Rafraîchir les documents et les tâches
-            if (window.documentsManager) {
-                window.documentsManager.loadDocuments();
-            }
-            if (window.tasksManager) {
-                window.tasksManager.loadTasks();
-            }
-        }, 5000);
+            document.getElementById('uploadProgress').style.display = 'none';
+            
+            // Rediriger vers l'onglet Tâches
+            this.switchToTasksTab();
+            
+        } catch (error) {
+            showToast(`❌ Upload échoué: ${error.message}`, 'error');
+        } finally {
+            uploadBtn.disabled = false;
+            uploadBtn.textContent = '🚀 Upload & Traitement';
+        }
+    },
+
+    switchToTasksTab() {
+        // Trouver l'élément du menu "Tâches" et simuler un clic
+        const tasksNavItem = document.querySelector('.nav-item[data-tab="tasks"]');
+        if (tasksNavItem) {
+            tasksNavItem.click();
+        } else {
+            // Fallback : recharger la page pour afficher les tâches
+            window.location.reload();
+        }
     }
 };
 
