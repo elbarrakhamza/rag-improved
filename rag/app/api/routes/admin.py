@@ -33,13 +33,9 @@ async def upload_documents(
     use_vision_llm: bool = Form(True),
     skip_embedding: bool = Form(False),
     skip_db_insert: bool = Form(False),
-    mode: str = Form("auto"),  # NOUVEAU : 'auto' ou 'manual'
+    mode: str = Form("auto"),
     key_info: dict = Depends(get_admin_api_key)
 ):
-    """
-    Upload de documents pour ingestion.
-    mode : 'auto' (tout enchaîné) ou 'manual' (génération des chunks seulement)
-    """
     try:
         temp_dir = tempfile.mkdtemp()
         uploaded_files = []
@@ -69,6 +65,19 @@ async def upload_documents(
                 detail="No supported files found (PDF, TXT, MD)"
             )
         
+        # --- CRÉATION DU DICTIONNAIRE METADATA ---
+        metadata = {
+            "brand": brand,
+            "elevator_model": elevator_model,
+            "document_type": document_type,
+            "document_version": document_version,
+            "visibility": visibility,
+            "use_smart_pdf": use_smart_pdf,
+            "use_vision_llm": use_vision_llm,
+            "skip_embedding": skip_embedding,
+            "skip_db_insert": skip_db_insert
+        }
+        
         task_id = str(uuid.uuid4())
         async with request.app.state.pool.acquire() as conn:
             await conn.execute(
@@ -79,17 +88,7 @@ async def upload_documents(
                 task_id,
                 "UPLOADED",
                 json.dumps(uploaded_files),
-                json.dumps({
-                    "brand": brand,
-                    "elevator_model": elevator_model,
-                    "document_type": document_type,
-                    "document_version": document_version,
-                    "visibility": visibility,
-                    "use_smart_pdf": use_smart_pdf,
-                    "use_vision_llm": use_vision_llm,
-                    "skip_embedding": skip_embedding,
-                    "skip_db_insert": skip_db_insert
-                }),
+                json.dumps(metadata),  # <- metadata défini
                 json.dumps({"mode": mode})
             )
 
@@ -107,7 +106,6 @@ async def upload_documents(
     except Exception as e:
         logger.error(f"Erreur lors de l'upload: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.get("/task/{task_id}")
 async def get_task_status(
