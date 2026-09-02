@@ -18,6 +18,7 @@ const app = {
         // Setup login
         const loginForm = document.getElementById('loginForm');
         if (loginForm) {
+            // Supprimer les anciens listeners
             const newForm = loginForm.cloneNode(true);
             loginForm.parentNode.replaceChild(newForm, loginForm);
             
@@ -66,6 +67,7 @@ const app = {
 
     async verifyApiKey(key, url) {
         console.log('🔍 Vérification de la clé API...');
+        // Ne pas essayer de charger les données ici
         try {
             api.setApiKey(key);
             api.setApiBase(url);
@@ -76,9 +78,12 @@ const app = {
             
             this.showApp();
             this.checkApiConnection();
+            
             // Charger le dashboard APRÈS la connexion réussie
-            await this.loadDashboard();
-            await this.loadFeedbackData();
+            setTimeout(() => {
+                this.loadDashboard();
+                this.loadFeedbackData();
+            }, 500);
             
         } catch (error) {
             console.error('❌ Clé invalide:', error.message);
@@ -91,7 +96,8 @@ const app = {
                 errorDiv.textContent = '❌ Clé API invalide. Veuillez réessayer.';
                 errorDiv.style.display = 'block';
             }
-            document.getElementById('apiKeyInput').value = '';
+            const apiKeyInput = document.getElementById('apiKeyInput');
+            if (apiKeyInput) apiKeyInput.value = '';
         }
     },
 
@@ -99,25 +105,18 @@ const app = {
         console.log('🔑 Tentative de connexion...');
         
         const apiKeyInput = document.getElementById('apiKeyInput');
-        const apiUrlInput = document.getElementById('apiUrlInput');
         const errorDiv = document.getElementById('loginError');
         
         const key = apiKeyInput ? apiKeyInput.value.trim() : '';
-        const url = apiUrlInput ? apiUrlInput.value.trim() : 'https://api-rag.stage.enset.top';
+        // URL fixe - pas de champ dans le formulaire
+        const url = 'https://api-rag.stage.enset.top';
         
         if (!key) {
             if (errorDiv) {
                 errorDiv.textContent = '❌ Veuillez entrer une clé API';
                 errorDiv.style.display = 'block';
             }
-            return;
-        }
-        
-        if (!url) {
-            if (errorDiv) {
-                errorDiv.textContent = '❌ Veuillez entrer l\'URL de l\'API';
-                errorDiv.style.display = 'block';
-            }
+            showToast('❌ Veuillez entrer une clé API', 'error', 3000);
             return;
         }
         
@@ -137,9 +136,13 @@ const app = {
             if (errorDiv) errorDiv.style.display = 'none';
             this.showApp();
             this.checkApiConnection();
-            // Charger le dashboard APRÈS la connexion réussie
-            await this.loadDashboard();
-            await this.loadFeedbackData();
+            
+            // Charger le dashboard APRÈS la connexion
+            setTimeout(() => {
+                this.loadDashboard();
+                this.loadFeedbackData();
+            }, 500);
+            
             showToast('✅ Connexion réussie !', 'success', 3000);
             
         } catch (error) {
@@ -211,17 +214,19 @@ const app = {
                 
                 // Rafraîchir les données selon l'onglet
                 if (tabId === 'documents' && window.documentsManager) {
-                    window.documentsManager.loadDocuments();
+                    setTimeout(() => window.documentsManager.loadDocuments(), 100);
                 }
                 if (tabId === 'apikeys' && window.apiKeysManager) {
-                    window.apiKeysManager.loadApiKeys();
+                    setTimeout(() => window.apiKeysManager.loadApiKeys(), 100);
                 }
                 if (tabId === 'feedback' && window.feedbackManager) {
-                    window.feedbackManager.loadFeedback();
-                    window.feedbackManager.loadStats();
+                    setTimeout(() => {
+                        window.feedbackManager.loadFeedback();
+                        window.feedbackManager.loadStats();
+                    }, 100);
                 }
                 if (tabId === 'cache' && window.cacheManager) {
-                    window.cacheManager.loadStats();
+                    setTimeout(() => window.cacheManager.loadStats(), 100);
                 }
             });
         });
@@ -273,21 +278,25 @@ const app = {
             const statCache = document.getElementById('statCache');
             if (statCache) statCache.textContent = cacheStats.total_cached || 0;
             
+            // Récupérer le nombre de feedbacks
+            try {
+                const topQuestions = await api.getTopQuestions(5);
+                const statFeedback = document.getElementById('statFeedback');
+                if (statFeedback) statFeedback.textContent = topQuestions.length || 0;
+            } catch (e) {
+                console.warn('Erreur chargement feedback stats:', e);
+            }
+            
             console.log('✅ Dashboard chargé');
         } catch (error) {
             console.error('❌ Erreur chargement dashboard:', error);
-            // Ne pas afficher d'erreur ici, juste log
+            // Ne pas afficher d'erreur à l'utilisateur
         }
     },
 
     async loadFeedbackData() {
         console.log('💬 Chargement des feedbacks...');
         try {
-            const topQuestions = await api.getTopQuestions(5);
-            const statFeedback = document.getElementById('statFeedback');
-            if (statFeedback) statFeedback.textContent = topQuestions.length || 0;
-            
-            // Mettre à jour les listes
             if (window.feedbackManager) {
                 await window.feedbackManager.loadTopQuestions();
                 await window.feedbackManager.loadLowPerforming();
@@ -295,7 +304,7 @@ const app = {
             console.log('✅ Feedbacks chargés');
         } catch (error) {
             console.error('❌ Erreur chargement feedbacks:', error);
-            // Ne pas afficher d'erreur ici, juste log
+            // Ne pas afficher d'erreur à l'utilisateur
         }
     }
 };
