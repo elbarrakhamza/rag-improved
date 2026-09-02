@@ -32,15 +32,16 @@ async def update_task_status(task_id: str, status: str, error: str = None, messa
 
 
 async def save_chunks_to_task(task_id: str, chunks: List[Dict[str, Any]]):
+    """Stocke les chunks dans la tâche (en JSONB)."""
     pool = await get_pool()
     async with pool.acquire() as conn:
         await conn.execute(
             """
             UPDATE ingestion_tasks
-            SET chunks = $1, updated_at = NOW()
+            SET chunks = $1::jsonb, updated_at = NOW()
             WHERE id = $2
             """,
-            json.dumps(chunks),
+            json.dumps(chunks),  # chaîne JSON castée en jsonb
             task_id
         )
 

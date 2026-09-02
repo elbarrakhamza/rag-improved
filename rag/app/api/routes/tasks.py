@@ -64,15 +64,10 @@ async def get_task_chunks(
     db_connection: Connection = Depends(get_connection),
     key_info: dict = Depends(get_admin_api_key)
 ):
-    row = await db_connection.fetchrow(
-        "SELECT chunks FROM ingestion_tasks WHERE id = $1",
-        task_id
-    )
-    if not row:
-        raise HTTPException(status_code=404, detail="Task not found")
+    row = await db_connection.fetchrow("SELECT chunks FROM ingestion_tasks WHERE id = $1", task_id)
+    if not row: raise HTTPException(404, "Task not found")
     chunks = row["chunks"]
-    if chunks is None:
-        raise HTTPException(status_code=404, detail="No chunks available for this task")
+    if chunks is None: raise HTTPException(404, "No chunks available")
     return chunks
 
 

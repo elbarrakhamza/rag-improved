@@ -186,13 +186,57 @@ const tasksManager = {
     },
 
     async viewChunks(taskId) {
+        const modal = document.getElementById('chunksModal');
+        const container = document.getElementById('chunksContainer');
+
         try {
-            const chunks = await api.getTaskChunks(taskId);
-            this.currentTaskId = taskId;
-            this.displayChunks(chunks);
-            document.getElementById('chunksModal').style.display = 'flex';
+            container.innerHTML = '<p>Chargement des chunks...</p>';
+            modal.style.display = 'block';
+
+            // Récupérer les chunks
+            let chunks = await api.getTaskChunks(taskId);
+
+            // Si c'est une chaîne JSON, la parser
+            if (typeof chunks === 'string') {
+                try {
+                    chunks = JSON.parse(chunks);
+                } catch (e) {
+                    throw new Error('Format de chunks invalide');
+                }
+            }
+
+            // Vérifier que c'est bien un tableau
+            if (!Array.isArray(chunks)) {
+                throw new Error('Les chunks ne sont pas au format attendu');
+            }
+
+            if (chunks.length === 0) {
+                container.innerHTML = '<p>Aucun chunk disponible pour cette tâche.</p>';
+                return;
+            }
+
+            // Afficher les chunks
+            container.innerHTML = chunks.map((chunk, index) => `
+                <div class="chunk-item" style="border:1px solid #ddd; padding:10px; margin:10px 0; border-radius:5px;">
+                    <h4>Chunk ${index + 1}</h4>
+                    <div style="margin-bottom:5px;">
+                        <strong>Page :</strong> ${chunk.metadata?.page_number || 'N/A'}
+                        &nbsp;|&nbsp;
+                        <strong>Source :</strong> ${chunk.metadata?.source_file || 'Inconnu'}
+                    </div>
+                    <textarea class="chunk-content" data-index="${index}" style="width:100%; min-height:80px; padding:8px; font-family:monospace;">${chunk.page_content || ''}</textarea>
+                </div>
+            `).join('');
+
+            // Stocker l'ID de la tâche pour validation ultérieure
+            modal.dataset.taskId = taskId;
+
+            // Ajouter un bouton "Sauvegarder les modifications" (optionnel)
+            // On peut le faire via un écouteur global sur le modal
+
         } catch (error) {
-            showToast(`Erreur lors du chargement des chunks: ${error.message}`, 'error');
+            console.error('Erreur chargement chunks:', error);
+            container.innerHTML = `<p class="error" style="color:#f44336;">Erreur : ${error.message}</p>`;
         }
     },
 
