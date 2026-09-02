@@ -236,7 +236,7 @@ class TaskPoller {
         this.onComplete = onComplete;
         this.onError = onError;
         this.polling = false;
-        this.interval = 1000;
+        this.interval = 5000;
         this.timeout = 300000;
         this.startTime = Date.now();
     }

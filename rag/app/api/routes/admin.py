@@ -1,23 +1,27 @@
 import asyncio
 import json
 import uuid
+import tempfile
+import zipfile
+import shutil
+import hashlib
+import secrets
+from pathlib import Path
+from typing import List, Optional
 
 from fastapi import APIRouter, Request, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import JSONResponse
-from typing import List, Optional
-import os
-import zipfile
-import tempfile
-import shutil
-from pathlib import Path
 from loguru import logger
+
+from app.core.config import settings
 from app.core.security import get_admin_api_key, clear_api_key_cache
 from app.service.cache import embedding_cache
-from app.core.config import settings
 from app.tasks.ingestion_task import start_ingestion_task
-import hashlib
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+# Ensemble pour garder une référence aux tâches en arrière‑plan
+background_tasks = set()
 
 
 @router.post("/upload")
@@ -34,38 +38,38 @@ async def upload_documents(
     skip_embedding: bool = Form(False),
     skip_db_insert: bool = Form(False),
     mode: str = Form("auto"),
-    key_info: dict = Depends(get_admin_api_key)
+    key_info: dict = Depends(get_admin_api_key),
 ):
+    """
+    Upload de documents pour ingestion.
+    mode : 'auto' (tout enchaîné) ou 'manual' (génération des chunks seulement)
+    """
     try:
         temp_dir = tempfile.mkdtemp()
         uploaded_files = []
-        
+
         for file in files:
             file_path = os.path.join(temp_dir, file.filename)
             with open(file_path, "wb") as f:
                 content = await file.read()
                 f.write(content)
-            
+
             if file.filename.endswith('.zip'):
                 with zipfile.ZipFile(file_path, 'r') as zip_ref:
                     zip_ref.extractall(temp_dir)
                 os.remove(file_path)
             else:
                 uploaded_files.append(file_path)
-        
-        # Ajouter les fichiers extraits du ZIP
+
         for root, _, files_in_dir in os.walk(temp_dir):
             for file_in_dir in files_in_dir:
                 if file_in_dir.endswith(('.pdf', '.txt', '.md', '.markdown')):
                     uploaded_files.append(os.path.join(root, file_in_dir))
-        
+
         if not uploaded_files:
-            raise HTTPException(
-                status_code=400,
-                detail="No supported files found (PDF, TXT, MD)"
-            )
-        
-        # --- CRÉATION DU DICTIONNAIRE METADATA ---
+            raise HTTPException(status_code=400, detail="No supported files found (PDF, TXT, MD)")
+
+        # Dictionnaire de métadonnées
         metadata = {
             "brand": brand,
             "elevator_model": elevator_model,
@@ -75,10 +79,12 @@ async def upload_documents(
             "use_smart_pdf": use_smart_pdf,
             "use_vision_llm": use_vision_llm,
             "skip_embedding": skip_embedding,
-            "skip_db_insert": skip_db_insert
+            "skip_db_insert": skip_db_insert,
         }
-        
+
         task_id = str(uuid.uuid4())
+
+        # Insérer la tâche en base de données
         async with request.app.state.pool.acquire() as conn:
             await conn.execute(
                 """
@@ -88,30 +94,35 @@ async def upload_documents(
                 task_id,
                 "UPLOADED",
                 json.dumps(uploaded_files),
-                json.dumps(metadata),  # <- metadata défini
-                json.dumps({"mode": mode})
+                json.dumps(metadata),
+                json.dumps({"mode": mode}),
             )
 
-        # Lancer l'ingestion en arrière-plan
-        asyncio.create_task(start_ingestion_task(task_id, uploaded_files, metadata, mode))
+        # Lancer l'ingestion en arrière‑plan avec une référence persistante
+        task = asyncio.create_task(
+            start_ingestion_task(task_id, uploaded_files, metadata, mode)
+        )
+        background_tasks.add(task)
+        task.add_done_callback(background_tasks.discard)
 
         return {
             "status": "success",
             "task_id": task_id,
             "files_count": len(uploaded_files),
             "message": f"Ingestion started in {mode} mode",
-            "mode": mode
+            "mode": mode,
         }
-        
+
     except Exception as e:
         logger.error(f"Erreur lors de l'upload: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/task/{task_id}")
 async def get_task_status(
     task_id: str,
     request: Request,
-    key_info: dict = Depends(get_admin_api_key)
+    key_info: dict = Depends(get_admin_api_key),
 ):
     """Récupère le statut d'une tâche d'ingestion."""
     from app.tasks.ingestion_task import get_task_status_async
