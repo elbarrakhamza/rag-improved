@@ -188,6 +188,8 @@ class EmbeddingCache:
         except Exception as e:
             return {"enabled": False, "error": str(e)}
 
+    
+
 
 # Instance globale
 embedding_cache = EmbeddingCache()

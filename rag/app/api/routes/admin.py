@@ -370,29 +370,30 @@ async def mark_all_notifications_read(
 async def update_document_visibility(
     source_file: str,
     request: Request,
-    visibility: str = Form(...),  # 'public' ou 'private'
+    visibility: str = Form(...),
     key_info: dict = Depends(get_admin_api_key)
 ):
     """
     Change la visibilité d'un document (public/private).
+    Vide le cache public pour éviter les incohérences.
     """
     import urllib.parse
+    from app.service.cache import embedding_cache
+
     pool = request.app.state.pool
     decoded_source = urllib.parse.unquote(source_file)
-    
+
     if visibility not in ["public", "private"]:
         raise HTTPException(status_code=400, detail="Visibility must be 'public' or 'private'")
-    
+
     async with pool.acquire() as conn:
-        # Vérifier si le document existe
         exists = await conn.fetchval(
             "SELECT EXISTS(SELECT 1 FROM documents WHERE metadata->>'source_file' = $1)",
             decoded_source
         )
         if not exists:
             raise HTTPException(status_code=404, detail="Document not found")
-        
-        # Mettre à jour la visibilité dans metadata
+
         await conn.execute(
             """
             UPDATE documents
@@ -402,10 +403,16 @@ async def update_document_visibility(
             f'"{visibility}"',
             decoded_source
         )
-    
+
+    # 🔥 Vider le cache public (ou tout le cache) pour éviter les incohérences
+    # Option 1 : vider tout le cache (simple et sûr)
+    embedding_cache.clear_cache()
+    # Option 2 : vider seulement le cache public
+    # embedding_cache.clear_public_cache()  # si vous implémentez cette méthode
+
     return {
         "status": "success",
         "source_file": decoded_source,
         "visibility": visibility,
-        "message": f"Visibility updated to {visibility}"
+        "message": f"Visibility updated to {visibility}. Cache cleared."
     }
