@@ -10,12 +10,14 @@ from app.api.routes.feedback import router as feedback_router
 from app.core.config import settings
 from app.database.postgres_connection import get_pool
 from app.service.embedder import Embedder
+from app.api.routes.tasks import router as tasks_router
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from loguru import logger
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+
 import os
 
 
@@ -97,6 +99,7 @@ app.add_middleware(
 app.include_router(query_router)
 app.include_router(admin_router)
 app.include_router(feedback_router)
+app.include_router(tasks_router)
 
 
 async def _check_database(app: FastAPI):

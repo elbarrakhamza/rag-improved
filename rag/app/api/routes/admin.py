@@ -1,3 +1,8 @@
+import asyncio
+from importlib.metadata import metadata
+import json
+import uuid
+
 from fastapi import APIRouter, Request, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 from typing import List, Optional
@@ -28,10 +33,12 @@ async def upload_documents(
     use_vision_llm: bool = Form(True),
     skip_embedding: bool = Form(False),
     skip_db_insert: bool = Form(False),
+    mode: str = Form("auto"),  # NOUVEAU : 'auto' ou 'manual'
     key_info: dict = Depends(get_admin_api_key)
 ):
     """
-    Upload de documents pour ingestion
+    Upload de documents pour ingestion.
+    mode : 'auto' (tout enchaîné) ou 'manual' (génération des chunks seulement)
     """
     try:
         temp_dir = tempfile.mkdtemp()
@@ -63,28 +70,40 @@ async def upload_documents(
             )
         
         from app.tasks.ingestion_task import start_ingestion
-        task_id = start_ingestion(
-            files=uploaded_files,
-            metadata={
-                "brand": brand,
-                "elevator_model": elevator_model,
-                "document_type": document_type,
-                "document_version": document_version,
-                "visibility": visibility,
-                "use_smart_pdf": use_smart_pdf,
-                "use_vision_llm": use_vision_llm,
-                "skip_embedding": skip_embedding,
-                "skip_db_insert": skip_db_insert
-            },
-            temp_dir=temp_dir
-        )
-        
+        task_id = str(uuid.uuid4())
+        async with request.app.state.pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO ingestion_tasks (id, status, files, metadata, options, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+                """,
+                task_id,
+                "UPLOADED",
+                json.dumps(uploaded_files),
+                json.dumps({
+                    "brand": brand,
+                    "elevator_model": elevator_model,
+                    "document_type": document_type,
+                    "document_version": document_version,
+                    "visibility": visibility,
+                    "use_smart_pdf": use_smart_pdf,
+                    "use_vision_llm": use_vision_llm,
+                    "skip_embedding": skip_embedding,
+                    "skip_db_insert": skip_db_insert
+                }),
+                json.dumps({"mode": mode})
+            )
+
+        # Lancer l'ingestion en arrière-plan
+        from app.tasks.ingestion_task import start_ingestion_task
+        asyncio.create_task(start_ingestion_task(task_id, uploaded_files, metadata, mode))
+
         return {
             "status": "success",
             "task_id": task_id,
             "files_count": len(uploaded_files),
-            "message": f"Ingestion started for {len(uploaded_files)} files",
-            "mode": "test" if skip_embedding else "production"
+            "message": f"Ingestion started in {mode} mode",
+            "mode": mode
         }
         
     except Exception as e:

@@ -65,3 +65,21 @@ VALUES (
     'admin',
     'Default admin key - CHANGE ME'
 ) ON CONFLICT (key_hash) DO NOTHING;
+
+
+-- Table de suivi des tâches d'ingestion (Phase 1)
+CREATE TABLE IF NOT EXISTS ingestion_tasks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    status VARCHAR(30) NOT NULL DEFAULT 'UPLOADED',
+    files JSONB NOT NULL,
+    metadata JSONB NOT NULL,
+    chunks JSONB,
+    options JSONB NOT NULL,
+    admin_id INTEGER REFERENCES api_keys(id) ON DELETE SET NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    error_message TEXT
+);
+
+CREATE INDEX idx_ingestion_tasks_status ON ingestion_tasks(status);
+CREATE INDEX idx_ingestion_tasks_created_at ON ingestion_tasks(created_at);
