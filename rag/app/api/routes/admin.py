@@ -10,6 +10,10 @@ import secrets
 import urllib.parse
 from pathlib import Path
 from typing import List, Optional
+from datetime import datetime
+import csv
+import io
+from fastapi.responses import StreamingResponse, JSONResponse
 
 from fastapi import APIRouter, Request, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import JSONResponse
@@ -416,3 +420,115 @@ async def update_document_visibility(
         "visibility": visibility,
         "message": f"Visibility updated to {visibility}. Cache cleared."
     }
+
+
+@router.get("/export")
+async def export_data(
+    request: Request,
+    format: str = "json",
+    type: str = "chunks",
+    key_info: dict = Depends(get_admin_api_key)
+):
+    pool = request.app.state.pool
+    async with pool.acquire() as conn:
+        if type == "chunks":
+            rows = await conn.fetch("SELECT id, content, metadata, embedding FROM documents ORDER BY id")
+            data = [dict(row) for row in rows]
+        else:
+            rows = await conn.fetch("SELECT DISTINCT metadata->>'source_file' as source_file, metadata FROM documents")
+            data = [dict(row) for row in rows]
+
+    if format == "csv":
+        output = io.StringIO()
+        if data:
+            writer = csv.DictWriter(output, fieldnames=data[0].keys())
+            writer.writeheader()
+            writer.writerows(data)
+        return StreamingResponse(iter([output.getvalue()]), media_type="text/csv", headers={
+            "Content-Disposition": f"attachment; filename=export_{type}_{datetime.now().isoformat()}.csv"
+        })
+    else:
+        return JSONResponse(content=data)
+
+
+@router.post("/import")
+async def import_metadata(
+    request: Request,
+    file: UploadFile = File(...),
+    key_info: dict = Depends(get_admin_api_key)
+):
+    content = await file.read()
+    try:
+        data = json.loads(content)
+    except:
+        raise HTTPException(400, "Invalid JSON")
+    if not isinstance(data, list):
+        raise HTTPException(400, "Expected a list of objects")
+
+    pool = request.app.state.pool
+    async with pool.acquire() as conn:
+        updated = 0
+        for item in data:
+            source_file = item.get("source_file")
+            if not source_file:
+                continue
+            meta = item.get("metadata", {})
+            await conn.execute(
+                """
+                UPDATE documents
+                SET metadata = metadata || $1::jsonb
+                WHERE metadata->>'source_file' = $2
+                """,
+                json.dumps(meta),
+                source_file
+            )
+            updated += 1
+    return {"status": "success", "updated": updated}
+
+
+@router.post("/tasks/bulk")
+async def bulk_task_action(
+    request: Request,
+    task_ids: List[str],
+    action: str,
+    key_info: dict = Depends(get_admin_api_key)
+):
+    pool = request.app.state.pool
+    async with pool.acquire() as conn:
+        if action == "delete":
+            await conn.execute("DELETE FROM ingestion_tasks WHERE id = ANY($1)", task_ids)
+        elif action == "validate":
+            for tid in task_ids:
+                row = await conn.fetchrow("SELECT status, chunks, metadata FROM ingestion_tasks WHERE id = $1", tid)
+                if row and row["status"] in ("CHUNKS_GENERATED", "CHUNKS_MODIFIED"):
+                    await conn.execute("UPDATE ingestion_tasks SET status = 'EMBEDDING_IN_PROGRESS' WHERE id = $1", tid)
+                    from app.tasks.ingestion_task import run_embedding_phase
+                    import asyncio
+                    asyncio.create_task(run_embedding_phase(tid, row["chunks"], row["metadata"]))
+        elif action == "cancel":
+            await conn.execute("UPDATE ingestion_tasks SET status = 'CANCELLED' WHERE id = ANY($1)", task_ids)
+    return {"status": "success", "action": action, "count": len(task_ids)}
+
+
+@router.get("/history")
+async def get_history(
+    request: Request,
+    limit: int = 50,
+    offset: int = 0,
+    key_info: dict = Depends(get_admin_api_key)
+):
+    pool = request.app.state.pool
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, task_id, title, message, type, created_at
+            FROM notifications
+            WHERE user_id = $1
+            ORDER BY created_at DESC
+            LIMIT $2 OFFSET $3
+            """,
+            key_info.get("api_key_id"),
+            limit,
+            offset
+        )
+    return [dict(row) for row in rows]
