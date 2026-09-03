@@ -13,11 +13,11 @@ from typing import List, Optional
 from datetime import datetime
 import csv
 import io
-from fastapi.responses import StreamingResponse, JSONResponse
 
 from fastapi import APIRouter, Request, Depends, HTTPException, UploadFile, File, Form
-from fastapi.responses import JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from loguru import logger
+from pydantic import BaseModel  # Ajout pour le modèle Bulk
 
 from app.core.config import settings
 from app.core.security import get_admin_api_key, clear_api_key_cache
@@ -28,6 +28,12 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 # Ensemble pour garder une référence aux tâches en arrière‑plan
 background_tasks = set()
+
+
+# ---- Modèle pour les actions groupées ----
+class BulkActionRequest(BaseModel):
+    task_ids: List[str]
+    action: str  # 'validate', 'cancel', 'delete'
 
 
 @router.post("/upload")
@@ -84,7 +90,7 @@ async def upload_documents(
         }
 
         task_id = str(uuid.uuid4())
-        admin_id = key_info.get("api_key_id")  # Récupéré depuis la clé admin
+        admin_id = key_info.get("api_key_id")
 
         async with request.app.state.pool.acquire() as conn:
             await conn.execute(
@@ -101,7 +107,6 @@ async def upload_documents(
                 admin_id,
             )
 
-        # Lancer l'ingestion en arrière‑plan
         task = asyncio.create_task(
             start_ingestion_task(task_id, uploaded_files, metadata, mode)
         )
@@ -370,6 +375,8 @@ async def mark_all_notifications_read(
         )
     return {"status": "success"}
 
+
+# ---- Visibilité ----
 @router.patch("/documents/{source_file}/visibility")
 async def update_document_visibility(
     source_file: str,
@@ -377,10 +384,6 @@ async def update_document_visibility(
     visibility: str = Form(...),
     key_info: dict = Depends(get_admin_api_key)
 ):
-    """
-    Change la visibilité d'un document (public/private).
-    Vide le cache public pour éviter les incohérences.
-    """
     import urllib.parse
     from app.service.cache import embedding_cache
 
@@ -408,11 +411,7 @@ async def update_document_visibility(
             decoded_source
         )
 
-    # 🔥 Vider le cache public (ou tout le cache) pour éviter les incohérences
-    # Option 1 : vider tout le cache (simple et sûr)
     embedding_cache.clear_cache()
-    # Option 2 : vider seulement le cache public
-    # embedding_cache.clear_public_cache()  # si vous implémentez cette méthode
 
     return {
         "status": "success",
@@ -422,6 +421,7 @@ async def update_document_visibility(
     }
 
 
+# ---- Export / Import ----
 @router.get("/export")
 async def export_data(
     request: Request,
@@ -486,30 +486,46 @@ async def import_metadata(
     return {"status": "success", "updated": updated}
 
 
+# ---- Bulk actions (corrigé avec Pydantic) ----
 @router.post("/tasks/bulk")
 async def bulk_task_action(
     request: Request,
-    task_ids: List[str],
-    action: str,
+    payload: BulkActionRequest,  # ← utilisation du modèle
     key_info: dict = Depends(get_admin_api_key)
 ):
+    task_ids = payload.task_ids
+    action = payload.action
+
     pool = request.app.state.pool
     async with pool.acquire() as conn:
         if action == "delete":
             await conn.execute("DELETE FROM ingestion_tasks WHERE id = ANY($1)", task_ids)
+
         elif action == "validate":
             for tid in task_ids:
-                row = await conn.fetchrow("SELECT status, chunks, metadata FROM ingestion_tasks WHERE id = $1", tid)
+                row = await conn.fetchrow(
+                    "SELECT status, chunks, metadata FROM ingestion_tasks WHERE id = $1",
+                    tid
+                )
                 if row and row["status"] in ("CHUNKS_GENERATED", "CHUNKS_MODIFIED"):
-                    await conn.execute("UPDATE ingestion_tasks SET status = 'EMBEDDING_IN_PROGRESS' WHERE id = $1", tid)
+                    await conn.execute(
+                        "UPDATE ingestion_tasks SET status = 'EMBEDDING_IN_PROGRESS' WHERE id = $1",
+                        tid
+                    )
                     from app.tasks.ingestion_task import run_embedding_phase
                     import asyncio
                     asyncio.create_task(run_embedding_phase(tid, row["chunks"], row["metadata"]))
+
         elif action == "cancel":
             await conn.execute("UPDATE ingestion_tasks SET status = 'CANCELLED' WHERE id = ANY($1)", task_ids)
+
+        else:
+            raise HTTPException(status_code=400, detail="Invalid action")
+
     return {"status": "success", "action": action, "count": len(task_ids)}
 
 
+# ---- Historique ----
 @router.get("/history")
 async def get_history(
     request: Request,
