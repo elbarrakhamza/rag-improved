@@ -81,22 +81,50 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-
-  # Frontend — domaine assigné via l'onglet Domains de Dokploy
+    
+  # Frontend
   frontend:
-    image: python:3.10-alpine
+    build:
+      context: ./rag-frontend
+      dockerfile: Dockerfile
     container_name: elevator-frontend
-    working_dir: /app
-    command: python -m http.server 80
-    volumes:
-      - ./frontend:/app:ro
-    expose:
-      - "80"
-    restart: unless-stopped
+    ports:
+      - "80:80"
     networks:
       - elevator-network
     depends_on:
       - rag-service
+    restart: unless-stopped
+
+  # Frontend — domaine assigné via l'onglet Domains de Dokploy
+  # frontend:
+  #   image: python:3.10-alpine
+  #   container_name: elevator-frontend
+  #   working_dir: /app
+  #   command: python -m http.server 80
+  #   volumes:
+  #     - ./frontend:/app:ro
+  #   expose:
+  #     - "80"
+  #   restart: unless-stopped
+  #   networks:
+  #     - elevator-network
+  #   depends_on:
+  #     - rag-service
+
+
+# frontend:
+#   build:
+#     context: ./rag-frontend
+#     dockerfile: Dockerfile
+#   container_name: elevator-frontend
+#   ports:
+#     - "80:80"
+#   networks:
+#     - elevator-network
+#   depends_on:
+#     - rag-service
+#   restart: unless-stopped
 
 volumes:
   postgres_data:
