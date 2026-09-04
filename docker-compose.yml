@@ -89,7 +89,7 @@ services:
       dockerfile: Dockerfile
     container_name: elevator-frontend
     ports:
-      - "80:80"
+      - "80"
     networks:
       - elevator-network
     depends_on:
