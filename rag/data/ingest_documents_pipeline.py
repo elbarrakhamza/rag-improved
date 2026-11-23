@@ -274,7 +274,7 @@ def enrich_chunks_with_embeddings(
         batch = chunks[i:i+batch_size]
         texts = [chunk["page_content"] for chunk in batch]
         
-        payload = {"input": texts, "model": embedding_model, "encoding_format": "float"}
+        payload = {"input": texts, "model": embedding_model, "encoding_format": "float", "input_type": "passage"}
         
         try:
             response = requests.post(url, headers=headers, json=payload, timeout=60)

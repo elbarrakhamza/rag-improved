@@ -75,7 +75,8 @@ class NvidiaAPIEmbedder:
         payload = {
             "input": texts,
             "model": self.model,
-            "encoding_format": "float"
+            "encoding_format": "float",
+            "input_type": "query"
         }
         
         try:
